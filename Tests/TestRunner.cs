@@ -26,6 +26,7 @@ public static class TestRunner
         CustomerRegistryTests.RunAll();
         ItemDefinitionTests.RunAll();
         ItemInstanceTests.RunAll();
+        ItemRegistryTests.RunAll();
         Console.WriteLine("=== All Phase 1 tests passed. ===");
     }
 }
