@@ -35,6 +35,7 @@ public static class TestRunner
         ScoreCalculatorTests.RunAll();
         BottomExtractorTests.RunAll();
         RunControllerTests.RunAll();
+        FinalPotSettlementTests.RunAll();
         Console.WriteLine("=== All tests passed. ===");
     }
 }

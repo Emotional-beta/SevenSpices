@@ -1,4 +1,7 @@
+using SevenSpices.Core.Customers;
 using SevenSpices.Core.Game;
+using SevenSpices.Core.Ingredients;
+using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 
 namespace SevenSpices.Core.Run;
@@ -95,5 +98,38 @@ public class RunController
         {
             run.IsFinalPot = true;
         }
+    }
+
+    /// <summary>
+    /// 最终锅结算入口：玩家主动结束煮粥，触发食客评价、奖励派发、锅底提炼。
+    /// 只能在 IsFinalPot == true 且锅仍在进行中（PotPhase.InProgress）时调用。
+    /// 重复调用会因 EndPot 的前置检查而抛出异常，天然防止奖励重复发放。
+    /// </summary>
+    /// <param name="customer">本次结算的食客实例。</param>
+    /// <param name="baseGoldReward">普通食客喝粥后的基础金币奖励。</param>
+    /// <param name="rewardIngredient">稀有食客满意时的食材奖励（可为 null）。</param>
+    /// <param name="rewardItem">稀有食客满意时的道具奖励（可为 null）。</param>
+    public void EndCooking(
+        CustomerInstance customer,
+        int baseGoldReward = 0,
+        IngredientInstance? rewardIngredient = null,
+        ItemInstance? rewardItem = null)
+    {
+        ArgumentNullException.ThrowIfNull(customer);
+
+        if (!_gameState.Run.IsFinalPot)
+            throw new InvalidOperationException(
+                "EndCooking can only be called during Final Pot.");
+
+        // EndPot 检查 Phase == InProgress，若已 Ended 则抛异常，防止重复结算
+        var ctrl = new PotController(_gameState);
+        ctrl.EndPot();
+
+        CustomerService.AssignCustomer(_gameState.Customer, customer);
+        CustomerService.EvaluateAndReward(
+            _gameState.Customer, _gameState.Pot, _gameState.Player,
+            baseGoldReward, rewardIngredient, rewardItem);
+
+        ctrl.ClosePot();
     }
 }
