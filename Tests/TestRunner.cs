@@ -1,3 +1,4 @@
+using SevenSpices.Tests.Customers;
 using SevenSpices.Tests.Effects;
 using SevenSpices.Tests.Game;
 using SevenSpices.Tests.Ingredients;
@@ -17,6 +18,7 @@ public static class TestRunner
         GameStateTests.RunAll();
         EffectSystemTests.RunAll();
         PotControllerTests.RunAll();
+        CustomerDefinitionTests.RunAll();
         Console.WriteLine("=== All Phase 1 tests passed. ===");
     }
 }
