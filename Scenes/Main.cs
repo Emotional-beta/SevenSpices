@@ -25,9 +25,11 @@ public partial class Main : Node
     private Label _totalScoreLabel = null!;
     private Label _flavorLabel = null!;
 
-    // 动态 tooltip 面板
+    // 动态 tooltip 面板（顶层覆盖，不参与布局，不拦截鼠标）
     private PanelContainer _tooltipPanel = null!;
     private Label _tooltipLabel = null!;
+    private bool _tooltipNeedsReposition;   // 等待下一帧取到真实 Size 后定位
+    private Vector2 _tooltipAnchor;         // 期望放置的初始锚点（鼠标附近）
 
     public override void _Ready()
     {
@@ -133,13 +135,24 @@ public partial class Main : Node
             _ingredientButtons[i] = btn;
         }
 
-        // 动态 tooltip 面板（默认隐藏，悬停时显示在按钮行下方）
+        // tooltip 面板挂到顶层覆盖 Control，脱离 vbox 布局流，
+        // 设置 MouseFilter.Ignore 彻底不参与鼠标事件，防止闪烁。
+        var tooltipOverlay = new Control();
+        tooltipOverlay.AnchorRight = 1.0f;
+        tooltipOverlay.AnchorBottom = 1.0f;
+        tooltipOverlay.GrowHorizontal = Control.GrowDirection.Both;
+        tooltipOverlay.GrowVertical = Control.GrowDirection.Both;
+        tooltipOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
+        AddChild(tooltipOverlay);
+
         _tooltipPanel = new PanelContainer();
         _tooltipPanel.Visible = false;
-        vbox.AddChild(_tooltipPanel);
+        _tooltipPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        tooltipOverlay.AddChild(_tooltipPanel);
 
         _tooltipLabel = new Label();
         _tooltipLabel.AutowrapMode = TextServer.AutowrapMode.Off;
+        _tooltipLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
         _tooltipPanel.AddChild(_tooltipLabel);
     }
 
@@ -162,7 +175,6 @@ public partial class Main : Node
         var def = IngredientData.Registry.Get(ingredientId);
         var pot = _gameState.Pot;
 
-        // 只在可以投入时提供预测；否则只显示食材描述
         int? previewBaseScore = null;
         if (pot.Phase == PotPhase.InProgress && pot.CurrentBowlPhase == BowlPhase.IngredientResolve)
         {
@@ -172,12 +184,49 @@ public partial class Main : Node
         }
 
         _tooltipLabel.Text = BuildIngredientTooltip(def, previewBaseScore);
+
+        // 记录鼠标位置（tooltip 偏移显示在鼠标右下方），等下一帧 Size 确定后 clamp
+        _tooltipAnchor = GetViewport().GetMousePosition() + new Vector2(14, 14);
+        _tooltipPanel.Position = _tooltipAnchor;
         _tooltipPanel.Visible = true;
+        _tooltipNeedsReposition = true;
     }
 
     private void HideTooltip()
     {
         _tooltipPanel.Visible = false;
+        _tooltipNeedsReposition = false;
+    }
+
+    public override void _Process(double delta)
+    {
+        if (!_tooltipNeedsReposition || !_tooltipPanel.Visible)
+            return;
+
+        // PanelContainer 在下一帧完成最小尺寸计算后 Size 才准确
+        var size = _tooltipPanel.Size;
+        if (size == Vector2.Zero)
+            return;     // 尺寸还未就绪，继续等
+
+        _tooltipNeedsReposition = false;
+
+        var viewport = GetViewport().GetVisibleRect().Size;
+        float x = _tooltipAnchor.X;
+        float y = _tooltipAnchor.Y;
+
+        // 右侧超出 → 向左翻转到鼠标左侧
+        if (x + size.X > viewport.X)
+            x = _tooltipAnchor.X - 14 - 14 - size.X;  // 减去两侧偏移后贴鼠标左边
+
+        // 下方超出 → 向上翻转到鼠标上方
+        if (y + size.Y > viewport.Y)
+            y = _tooltipAnchor.Y - 14 - 14 - size.Y;
+
+        // 最终 clamp，确保不会超出左/上边界
+        x = Mathf.Clamp(x, 0, Mathf.Max(0, viewport.X - size.X));
+        y = Mathf.Clamp(y, 0, Mathf.Max(0, viewport.Y - size.Y));
+
+        _tooltipPanel.Position = new Vector2(x, y);
     }
 
     private void OnIngredientPressed(string ingredientId)
