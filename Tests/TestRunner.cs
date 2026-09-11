@@ -25,6 +25,7 @@ public static class TestRunner
         EffectSystemTests.RunAll();
         PotControllerTests.RunAll();
         PotLifecycleTests.RunAll();
+        PreviewIngredientTests.RunAll();
         CustomerDefinitionTests.RunAll();
         SatisfactionEvaluatorTests.RunAll();
         CustomerInstanceTests.RunAll();

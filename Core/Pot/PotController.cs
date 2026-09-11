@@ -135,15 +135,48 @@ public class PotController
             throw new InvalidOperationException(
                 $"Cannot add ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientResolve.");
 
-        pot.Ingredients.Add(ingredient);
         int scoreBefore = pot.BaseScore;
+        pot.Ingredients.Add(ingredient);
+        ApplyIngredientTo(ingredient, pot, _gameState, effectSystem);
+        pot.TotalBaseScore += pot.BaseScore - scoreBefore;
+    }
+
+    /// <summary>
+    /// 预测将某食材加入当前碗后的结果，不修改任何真实状态。
+    /// 对当前 PotState 做快照拷贝，在拷贝上运行与 AddIngredient 相同的计算逻辑，返回预测结果。
+    /// 只能在 IngredientResolve 阶段调用。
+    /// </summary>
+    public IngredientPreview PreviewIngredient(IngredientInstance ingredient, EffectSystem effectSystem)
+    {
+        ArgumentNullException.ThrowIfNull(ingredient);
+        ArgumentNullException.ThrowIfNull(effectSystem);
+
+        var pot = _gameState.Pot;
+        if (pot.CurrentBowlPhase != BowlPhase.IngredientResolve)
+            throw new InvalidOperationException(
+                $"Cannot preview ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientResolve.");
+
+        var snapshot = PotStateSnapshot.From(pot);
+        snapshot.Ingredients.Add(ingredient);
+        ApplyIngredientTo(ingredient, snapshot, _gameState, effectSystem);
+
+        return new IngredientPreview(snapshot.BaseScore);
+    }
+
+    /// <summary>
+    /// 将食材的基础分、味道和效果链应用到目标 PotState（真实或快照）。
+    /// AddIngredient 和 PreviewIngredient 共享此方法，确保计算逻辑完全一致。
+    /// 调用方负责在调用前先将 ingredient 加入 pot.Ingredients（以便 UniqueCount 等效果能感知）。
+    /// </summary>
+    private static void ApplyIngredientTo(
+        IngredientInstance ingredient, PotState pot, GameState gameState, EffectSystem effectSystem)
+    {
         pot.BaseScore += ingredient.Definition.BaseScore;
         foreach (var (flavor, amount) in ingredient.Definition.Flavors)
             pot.AddFlavor(flavor, amount);
 
-        var context = new EffectContext(pot.BowlNumber, _gameState, pot, ingredient);
+        var context = new EffectContext(pot.BowlNumber, gameState, pot, ingredient);
         effectSystem.TriggerAll(ingredient.Definition.Effects, ingredient.InstanceId, context);
-        pot.TotalBaseScore += pot.BaseScore - scoreBefore;
     }
 
     /// <summary>

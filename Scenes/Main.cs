@@ -15,6 +15,7 @@ public partial class Main : Node
     private PotController _potController = null!;
     private EffectSystem _effectSystem = null!;
     private Button[] _ingredientButtons = null!;
+    private string[] _ingredientIds = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
@@ -23,6 +24,10 @@ public partial class Main : Node
     private Label _scoreLabel = null!;
     private Label _totalScoreLabel = null!;
     private Label _flavorLabel = null!;
+
+    // 动态 tooltip 面板
+    private PanelContainer _tooltipPanel = null!;
+    private Label _tooltipLabel = null!;
 
     public override void _Ready()
     {
@@ -112,6 +117,7 @@ public partial class Main : Node
         vbox.AddChild(btnRow);
 
         string[] ids = { "rice", "sugar", "pepper", "red_date" };
+        _ingredientIds = ids;
         _ingredientButtons = new Button[ids.Length];
         for (int i = 0; i < ids.Length; i++)
         {
@@ -120,12 +126,21 @@ public partial class Main : Node
             var btn = new Button();
             btn.Text = def.Name;
             btn.CustomMinimumSize = new Vector2(80, 36);
-            btn.TooltipText = BuildIngredientTooltip(def);
             btn.Pressed += () => OnIngredientPressed(capturedId);
+            btn.MouseEntered += () => OnIngredientHover(capturedId);
+            btn.MouseExited += HideTooltip;
             btnRow.AddChild(btn);
             _ingredientButtons[i] = btn;
         }
 
+        // 动态 tooltip 面板（默认隐藏，悬停时显示在按钮行下方）
+        _tooltipPanel = new PanelContainer();
+        _tooltipPanel.Visible = false;
+        vbox.AddChild(_tooltipPanel);
+
+        _tooltipLabel = new Label();
+        _tooltipLabel.AutowrapMode = TextServer.AutowrapMode.Off;
+        _tooltipPanel.AddChild(_tooltipLabel);
     }
 
     private static Label MakeLabel(string text, bool center = false, int minHeight = 0)
@@ -140,6 +155,29 @@ public partial class Main : Node
         if (minHeight > 0)
             lbl.CustomMinimumSize = new Vector2(0, minHeight);
         return lbl;
+    }
+
+    private void OnIngredientHover(string ingredientId)
+    {
+        var def = IngredientData.Registry.Get(ingredientId);
+        var pot = _gameState.Pot;
+
+        // 只在可以投入时提供预测；否则只显示食材描述
+        int? previewBaseScore = null;
+        if (pot.Phase == PotPhase.InProgress && pot.CurrentBowlPhase == BowlPhase.IngredientResolve)
+        {
+            var inst = IngredientData.CreateInstance(ingredientId);
+            var preview = _potController.PreviewIngredient(inst, _effectSystem);
+            previewBaseScore = preview.PreviewBaseScore;
+        }
+
+        _tooltipLabel.Text = BuildIngredientTooltip(def, previewBaseScore);
+        _tooltipPanel.Visible = true;
+    }
+
+    private void HideTooltip()
+    {
+        _tooltipPanel.Visible = false;
     }
 
     private void OnIngredientPressed(string ingredientId)
@@ -216,7 +254,7 @@ public partial class Main : Node
 
     // ── 食材 Tooltip ──────────────────────────────────────────────────────────
 
-    private static string BuildIngredientTooltip(IngredientDefinition def)
+    private static string BuildIngredientTooltip(IngredientDefinition def, int? previewBaseScore = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"名称：{def.Name}");
@@ -228,13 +266,16 @@ public partial class Main : Node
         {
             sb.AppendLine("触发条件：无");
             sb.AppendLine("触发效果：无");
-            sb.Append("效果类型：基础");
+            sb.AppendLine("效果类型：基础");
         }
         else
         {
             foreach (var effect in def.Effects)
-                sb.Append(DescribeEffect(effect));
+                sb.AppendLine(DescribeEffect(effect));
         }
+
+        if (previewBaseScore.HasValue)
+            sb.Append($"投入后预计基础分：{previewBaseScore.Value}");
 
         return sb.ToString().TrimEnd();
     }
