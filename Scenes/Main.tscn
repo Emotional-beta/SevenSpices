@@ -1,19 +1,19 @@
-[gd_scene load_steps=2 format=3 uid="uid://b3anpbq1kh520"]
+[gd_scene format=3 uid="uid://b3anpbq1kh520"]
 
-[ext_resource type="Script" path="res://Scenes/Main.cs" id="1_main00"]
+[ext_resource type="Script" uid="uid://bb0qytqp8m0wy" path="res://Scenes/Main.cs" id="1_main00"]
 
-[node name="Main" type="Node"]
+[node name="Main" type="Node" unique_id=1894521743]
 script = ExtResource("1_main00")
 
-[node name="UI" type="Control" parent="Main"]
+[node name="Main#UI" type="Control" parent="." unique_id=852747056]
+layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="MarginContainer" type="MarginContainer" parent="Main/UI"]
-layout_mode = 1
+[node name="Main_UI#MarginContainer" type="MarginContainer" parent="." unique_id=1727217627]
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -24,71 +24,126 @@ theme_override_constants/margin_top = 20
 theme_override_constants/margin_right = 20
 theme_override_constants/margin_bottom = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="Main/UI/MarginContainer"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer#VBoxContainer" type="VBoxContainer" parent="." unique_id=1433462103]
 theme_override_constants/separation = 20
 
-[node name="TitleLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer#TitleLabel" type="Label" parent="." unique_id=105960984]
 custom_minimum_size = Vector2(0, 40)
+offset_left = 1.0
+offset_top = -5.0
+offset_right = 65.0
+offset_bottom = 35.0
 text = "七荤八素"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="RunInfoRow" type="HBoxContainer" parent="Main/UI/MarginContainer/VBoxContainer"]
-layout_mode = 2
-alignment = 1
+[node name="Main_UI_MarginContainer_VBoxContainer#RunInfoRow" type="HBoxContainer" parent="." unique_id=113620794]
 theme_override_constants/separation = 40
+alignment = 1
 
-[node name="ChapterLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer/RunInfoRow"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer_RunInfoRow#ChapterLabel" type="Label" parent="." unique_id=1935801309]
 unique_name_in_owner = true
+offset_left = 65.0
+offset_top = 38.0
+offset_right = 115.0
+offset_bottom = 61.0
 text = "第 1 章"
 
-[node name="PotLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer/RunInfoRow"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer_RunInfoRow#PotLabel" type="Label" parent="." unique_id=1293178909]
 unique_name_in_owner = true
+offset_left = 125.0
+offset_top = 24.0
+offset_right = 175.0
+offset_bottom = 47.0
 text = "第 1 锅"
 
-[node name="PhaseLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer#PhaseLabel" type="Label" parent="." unique_id=342862373]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 28)
+offset_left = 87.0
+offset_top = 1.0
+offset_right = 167.0
+offset_bottom = 29.0
 text = "阶段：开始"
 horizontal_alignment = 1
 vertical_alignment = 1
-unique_name_in_owner = true
 
-[node name="BowlLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer#BowlLabel" type="Label" parent="." unique_id=1555348904]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 28)
+offset_left = 188.0
+offset_top = 33.0
+offset_right = 279.0
+offset_bottom = 61.0
 text = "碗数：1 / 10"
 horizontal_alignment = 1
 vertical_alignment = 1
-unique_name_in_owner = true
 
-[node name="ScoreLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer#ScoreLabel" type="Label" parent="." unique_id=1929488300]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 28)
+offset_left = 199.0
+offset_top = 4.0
+offset_right = 273.0
+offset_bottom = 32.0
 text = "基础分：0"
 horizontal_alignment = 1
 vertical_alignment = 1
-unique_name_in_owner = true
 
-[node name="HSeparator" type="HSeparator" parent="Main/UI/MarginContainer/VBoxContainer"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer#HSeparator" type="HSeparator" parent="." unique_id=409504210]
 custom_minimum_size = Vector2(0, 10)
 
-[node name="FlavorTitleLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer#FlavorTitleLabel" type="Label" parent="." unique_id=738032631]
 custom_minimum_size = Vector2(0, 28)
+offset_left = 30.0
+offset_top = 100.0
+offset_right = 62.0
+offset_bottom = 128.0
 text = "味道"
 horizontal_alignment = 1
 vertical_alignment = 1
 
-[node name="FlavorLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
-layout_mode = 2
+[node name="Main_UI_MarginContainer_VBoxContainer#FlavorLabel" type="Label" parent="." unique_id=43851353]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 28)
+offset_left = 77.0
+offset_top = 102.0
+offset_right = 274.0
+offset_bottom = 130.0
 text = "鲜 0   甜 0   辣 0   酸 0   苦 0"
 horizontal_alignment = 1
 vertical_alignment = 1
+
+[node name="Main_UI_MarginContainer_VBoxContainer#IngredientSeparator" type="HSeparator" parent="." unique_id=2193847560]
+custom_minimum_size = Vector2(0, 10)
+
+[node name="Main_UI_MarginContainer_VBoxContainer#IngredientTitleLabel" type="Label" parent="." unique_id=3748291056]
+custom_minimum_size = Vector2(0, 28)
+text = "投入食材"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Main_UI_MarginContainer_VBoxContainer#IngredientButtonRow" type="HBoxContainer" parent="." unique_id=4829301745]
+custom_minimum_size = Vector2(0, 44)
+alignment = 1
+theme_override_constants/separation = 15
+
+[node name="Main_UI_MarginContainer_VBoxContainer_IngredientButtonRow#RiceButton" type="Button" parent="." unique_id=1938472650]
 unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 40)
+text = "米饭"
+
+[node name="Main_UI_MarginContainer_VBoxContainer_IngredientButtonRow#SugarButton" type="Button" parent="." unique_id=2847301956]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 40)
+text = "糖"
+
+[node name="Main_UI_MarginContainer_VBoxContainer_IngredientButtonRow#PepperButton" type="Button" parent="." unique_id=3019284756]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 40)
+text = "辣椒"
+
+[node name="Main_UI_MarginContainer_VBoxContainer_IngredientButtonRow#RedDateButton" type="Button" parent="." unique_id=4756028391]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 40)
+text = "红枣"
