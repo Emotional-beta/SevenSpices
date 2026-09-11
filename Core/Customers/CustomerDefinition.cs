@@ -9,6 +9,9 @@ public class CustomerDefinition
     public string Id { get; }
     public string Name { get; }
 
+    /// <summary>true 表示稀有食客（有满意条件判断和即时奖励），false 表示普通食客。</summary>
+    public bool IsRare { get; }
+
     /// <summary>
     /// 食客的满意条件列表。多个条件之间为 OR 关系（满足任一即满意）。
     /// </summary>
@@ -17,6 +20,7 @@ public class CustomerDefinition
     public CustomerDefinition(
         string id,
         string name,
+        bool isRare = false,
         IEnumerable<CustomerSatisfactionCondition>? satisfactionConditions = null)
     {
         if (string.IsNullOrWhiteSpace(id))
@@ -26,6 +30,7 @@ public class CustomerDefinition
 
         Id = id;
         Name = name;
+        IsRare = isRare;
         SatisfactionConditions = satisfactionConditions?.ToList().AsReadOnly()
             ?? new List<CustomerSatisfactionCondition>().AsReadOnly();
     }

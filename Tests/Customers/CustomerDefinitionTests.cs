@@ -18,6 +18,8 @@ public static class CustomerDefinitionTests
         Test_Create_EmptyId_Throws();
         Test_Create_EmptyName_Throws();
         Test_Condition_NegativeThreshold_Throws();
+        Test_IsRare_DefaultIsFalse();
+        Test_IsRare_True();
 
         Console.WriteLine("All CustomerDefinitionTests passed.");
     }
@@ -35,7 +37,7 @@ public static class CustomerDefinitionTests
         {
             new CustomerSatisfactionCondition(ConditionType.ScoreAtLeast, 20),
         };
-        var def = new CustomerDefinition("customer_002", "挑剔客", conditions);
+        var def = new CustomerDefinition("customer_002", "挑剔客", isRare: true, satisfactionConditions: conditions);
         Assert(def.SatisfactionConditions.Count == 1, "SatisfactionConditions count must match");
         Assert(def.SatisfactionConditions[0].ConditionType == ConditionType.ScoreAtLeast,
             "ConditionType must be stored correctly");
@@ -92,6 +94,18 @@ public static class CustomerDefinitionTests
             Assert(false, "Negative Threshold must throw ArgumentOutOfRangeException");
         }
         catch (ArgumentOutOfRangeException) { }
+    }
+
+    static void Test_IsRare_DefaultIsFalse()
+    {
+        var def = new CustomerDefinition("customer_normal", "普通食客");
+        Assert(!def.IsRare, "Default IsRare must be false");
+    }
+
+    static void Test_IsRare_True()
+    {
+        var def = new CustomerDefinition("customer_rare", "稀有食客", isRare: true);
+        Assert(def.IsRare, "IsRare must be true when explicitly set");
     }
 
     static void Assert(bool condition, string message)

@@ -101,7 +101,7 @@ public static class SatisfactionEvaluatorTests
     }
 
     static CustomerDefinition MakeCustomer(params CustomerSatisfactionCondition[] conditions) =>
-        new("test_customer", "测试食客", conditions);
+        new("test_customer", "测试食客", isRare: true, satisfactionConditions: conditions);
 
     static PotState MakePot(int finalScore = 0, FlavorType? flavor = null, int flavorValue = 0)
     {
