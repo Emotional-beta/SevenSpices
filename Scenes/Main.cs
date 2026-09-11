@@ -15,6 +15,13 @@ public partial class Main : Node
     private EffectSystem _effectSystem = null!;
     private Button[] _ingredientButtons = null!;
 
+    private Label _chapterLabel = null!;
+    private Label _potLabel = null!;
+    private Label _phaseLabel = null!;
+    private Label _bowlLabel = null!;
+    private Label _scoreLabel = null!;
+    private Label _flavorLabel = null!;
+
     public override void _Ready()
     {
         _gameState = new GameState();
@@ -35,32 +42,82 @@ public partial class Main : Node
         GD.Print($"Final Pot: {_gameState.Run.IsFinalPot}");
         GD.Print($"Phase: {_gameState.Pot.Phase}");
 
-        BuildIngredientUI();
+        BuildUI();
         RefreshUI();
     }
 
-    private void BuildIngredientUI()
+    private void BuildUI()
     {
-        var vbox = GetNode<VBoxContainer>("%VBoxContainer");
+        // 全屏 Control 层
+        var uiRoot = new Control();
+        uiRoot.AnchorRight = 1.0f;
+        uiRoot.AnchorBottom = 1.0f;
+        uiRoot.GrowHorizontal = Control.GrowDirection.Both;
+        uiRoot.GrowVertical = Control.GrowDirection.Both;
+        AddChild(uiRoot);
 
-        var sep = new HSeparator();
-        sep.CustomMinimumSize = new Vector2(0, 10);
-        vbox.AddChild(sep);
+        // 边距容器
+        var margin = new MarginContainer();
+        margin.AnchorRight = 1.0f;
+        margin.AnchorBottom = 1.0f;
+        margin.GrowHorizontal = Control.GrowDirection.Both;
+        margin.GrowVertical = Control.GrowDirection.Both;
+        margin.AddThemeConstantOverride("margin_left", 20);
+        margin.AddThemeConstantOverride("margin_top", 20);
+        margin.AddThemeConstantOverride("margin_right", 20);
+        margin.AddThemeConstantOverride("margin_bottom", 20);
+        uiRoot.AddChild(margin);
 
-        var title = new Label();
-        title.Text = "投入食材";
-        title.HorizontalAlignment = HorizontalAlignment.Center;
-        title.CustomMinimumSize = new Vector2(0, 28);
-        vbox.AddChild(title);
+        // 垂直布局
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 20);
+        margin.AddChild(vbox);
 
-        var row = new HBoxContainer();
-        row.Alignment = BoxContainer.AlignmentMode.Center;
-        row.AddThemeConstantOverride("separation", 15);
-        vbox.AddChild(row);
+        // 标题
+        vbox.AddChild(MakeLabel("七荤八素", center: true, minHeight: 40));
+
+        // 章/锅信息行
+        var runRow = new HBoxContainer();
+        runRow.Alignment = BoxContainer.AlignmentMode.Center;
+        runRow.AddThemeConstantOverride("separation", 40);
+        vbox.AddChild(runRow);
+        _chapterLabel = MakeLabel("第 1 章");
+        runRow.AddChild(_chapterLabel);
+        _potLabel = MakeLabel("第 1 锅");
+        runRow.AddChild(_potLabel);
+
+        // 状态标签
+        _phaseLabel = MakeLabel("阶段：--", center: true, minHeight: 28);
+        vbox.AddChild(_phaseLabel);
+        _bowlLabel = MakeLabel("碗数：-- / --", center: true, minHeight: 28);
+        vbox.AddChild(_bowlLabel);
+        _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 28);
+        vbox.AddChild(_scoreLabel);
+
+        // 分隔线
+        var sep1 = new HSeparator();
+        sep1.CustomMinimumSize = new Vector2(0, 10);
+        vbox.AddChild(sep1);
+
+        // 味道
+        vbox.AddChild(MakeLabel("味道", center: true, minHeight: 28));
+        _flavorLabel = MakeLabel("--", center: true, minHeight: 28);
+        vbox.AddChild(_flavorLabel);
+
+        // 食材区
+        var sep2 = new HSeparator();
+        sep2.CustomMinimumSize = new Vector2(0, 10);
+        vbox.AddChild(sep2);
+
+        vbox.AddChild(MakeLabel("投入食材", center: true, minHeight: 28));
+
+        var btnRow = new HBoxContainer();
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        btnRow.AddThemeConstantOverride("separation", 15);
+        vbox.AddChild(btnRow);
 
         string[] ids = { "rice", "sugar", "pepper", "red_date" };
         _ingredientButtons = new Button[ids.Length];
-
         for (int i = 0; i < ids.Length; i++)
         {
             string capturedId = ids[i];
@@ -68,10 +125,24 @@ public partial class Main : Node
             var btn = new Button();
             btn.Text = def.Name;
             btn.CustomMinimumSize = new Vector2(80, 36);
-            row.AddChild(btn);
             btn.Pressed += () => OnIngredientPressed(capturedId);
+            btnRow.AddChild(btn);
             _ingredientButtons[i] = btn;
         }
+    }
+
+    private static Label MakeLabel(string text, bool center = false, int minHeight = 0)
+    {
+        var lbl = new Label();
+        lbl.Text = text;
+        if (center)
+        {
+            lbl.HorizontalAlignment = HorizontalAlignment.Center;
+            lbl.VerticalAlignment = VerticalAlignment.Center;
+        }
+        if (minHeight > 0)
+            lbl.CustomMinimumSize = new Vector2(0, minHeight);
+        return lbl;
     }
 
     private void OnIngredientPressed(string ingredientId)
@@ -86,20 +157,17 @@ public partial class Main : Node
         var run = _gameState.Run;
         var pot = _gameState.Pot;
 
-        GetNode<Label>("%ChapterLabel").Text = $"第 {run.Chapter} 章";
-        GetNode<Label>("%PotLabel").Text = $"第 {run.PotIndex} 锅";
-        GetNode<Label>("%PhaseLabel").Text = $"阶段：{ToBowlPhaseText(pot.CurrentBowlPhase)}";
-        GetNode<Label>("%BowlLabel").Text = $"碗数：{pot.Ingredients.Count} / {ToBowlLimitText(pot.BowlLimit)}";
-        GetNode<Label>("%ScoreLabel").Text = $"基础分：{pot.BaseScore}";
-        GetNode<Label>("%FlavorLabel").Text = ToFlavorText(pot);
+        _chapterLabel.Text = $"第 {run.Chapter} 章";
+        _potLabel.Text = $"第 {run.PotIndex} 锅";
+        _phaseLabel.Text = $"阶段：{ToBowlPhaseText(pot.CurrentBowlPhase)}";
+        _bowlLabel.Text = $"碗数：{pot.Ingredients.Count} / {ToBowlLimitText(pot.BowlLimit)}";
+        _scoreLabel.Text = $"基础分：{pot.BaseScore}";
+        _flavorLabel.Text = ToFlavorText(pot);
 
-        if (_ingredientButtons != null)
-        {
-            bool canAdd = pot.Ingredients.Count < pot.BowlLimit
-                          && pot.CurrentBowlPhase == BowlPhase.IngredientResolve;
-            foreach (var btn in _ingredientButtons)
-                btn.Disabled = !canAdd;
-        }
+        bool canAdd = pot.Ingredients.Count < pot.BowlLimit
+                      && pot.CurrentBowlPhase == BowlPhase.IngredientResolve;
+        foreach (var btn in _ingredientButtons)
+            btn.Disabled = !canAdd;
     }
 
     private static string ToBowlPhaseText(BowlPhase phase) => phase switch
