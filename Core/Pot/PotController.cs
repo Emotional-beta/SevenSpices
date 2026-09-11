@@ -1,4 +1,6 @@
+using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
+using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 
 namespace SevenSpices.Core.Pot;
@@ -115,5 +117,42 @@ public class PotController
 
         items.Remove(item);
         return item;
+    }
+
+    /// <summary>
+    /// 在 IngredientResolve 阶段将食材加入锅，并通过 EffectSystem 触发其效果链。
+    /// </summary>
+    public void AddIngredient(IngredientInstance ingredient, EffectSystem effectSystem)
+    {
+        ArgumentNullException.ThrowIfNull(ingredient);
+        ArgumentNullException.ThrowIfNull(effectSystem);
+
+        var pot = _gameState.Pot;
+        if (pot.CurrentBowlPhase != BowlPhase.IngredientResolve)
+            throw new InvalidOperationException(
+                $"Cannot add ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientResolve.");
+
+        pot.Ingredients.Add(ingredient);
+
+        var context = new EffectContext(pot.BowlNumber, _gameState, pot, ingredient);
+        effectSystem.TriggerAll(ingredient.Definition.Effects, ingredient.InstanceId, context);
+    }
+
+    /// <summary>
+    /// 在 ItemPhase 阶段为已消耗的道具触发其效果链。
+    /// 通常在 UseItem() 之后调用。
+    /// </summary>
+    public void ApplyItemEffect(ItemInstance item, EffectSystem effectSystem)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        ArgumentNullException.ThrowIfNull(effectSystem);
+
+        var pot = _gameState.Pot;
+        if (pot.CurrentBowlPhase != BowlPhase.ItemPhase)
+            throw new InvalidOperationException(
+                $"Cannot apply item effect: current bowl phase is {pot.CurrentBowlPhase}, expected ItemPhase.");
+
+        var context = new EffectContext(pot.BowlNumber, _gameState, pot, currentIngredient: null);
+        effectSystem.TriggerAll(item.Definition.Effects, item.InstanceId, context);
     }
 }

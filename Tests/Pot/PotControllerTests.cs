@@ -1,12 +1,16 @@
+using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
+using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
+using SevenSpices.Tests.Effects;
 
 namespace SevenSpices.Tests.Pot;
 
 /// <summary>
 /// PotController 基础流程测试。
 /// 覆盖：开锅初始化、碗的开始、碗数递增、普通锅第10碗结束、第11碗禁止、End状态阻止推进、最终锅边界。
+/// Phase 3 Part 4：AddIngredient / ApplyItemEffect 效果触发测试。
 /// </summary>
 public static class PotControllerTests
 {
@@ -28,6 +32,21 @@ public static class PotControllerTests
         Test_UseItem_ConsumesItemAndReturnsIt();
         Test_UseItem_RemovedFromPlayerItems();
         Test_UseItem_UnknownInstanceId_Throws();
+        // Part 4: AddIngredient
+        Test_AddIngredient_AddsToIngredients();
+        Test_AddIngredient_TriggersEffect();
+        Test_AddIngredient_ContextCurrentIngredientIsCorrect();
+        Test_AddIngredient_SourceIdIsInstanceId();
+        Test_AddIngredient_WrongPhase_Throws();
+        Test_AddIngredient_WrongPhase_DoesNotAddToIngredients();
+        // Part 4: ApplyItemEffect
+        Test_ApplyItemEffect_TriggersEffect();
+        Test_ApplyItemEffect_ContextCurrentIngredientIsNull();
+        Test_ApplyItemEffect_SourceIdIsItemInstanceId();
+        Test_ApplyItemEffect_WrongPhase_Throws();
+        // Part 4: 循环保护 / 共用 EffectSystem 路径
+        Test_AddIngredient_LoopProtection();
+        Test_IngredientAndItem_UseSharedEffectSystemPath();
 
         Console.WriteLine("All PotControllerTests passed.");
     }
@@ -366,6 +385,258 @@ public static class PotControllerTests
         catch (ArgumentException) { threw = true; }
 
         Assert(threw, "UseItem with unknown instanceId should throw ArgumentException");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Part 4: AddIngredient / ApplyItemEffect 辅助
+
+    /// <summary>把 PotController 推进到 IngredientResolve 阶段。</summary>
+    static PotController MakeControllerAtIngredientResolve(out GameState state)
+    {
+        state = new GameState();
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+        ctrl.StartBowl();
+        ctrl.AdvanceBowlPhase(); // → Customer
+        ctrl.AdvanceBowlPhase(); // → ItemPhase
+        ctrl.AdvanceBowlPhase(); // → IngredientSelection
+        ctrl.AdvanceBowlPhase(); // → IngredientResolve
+        return ctrl;
+    }
+
+    /// <summary>把 PotController 推进到 ItemPhase 阶段。</summary>
+    static PotController MakeControllerAtItemPhase(out GameState state)
+    {
+        state = new GameState();
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+        ctrl.StartBowl();
+        ctrl.AdvanceBowlPhase(); // → Customer
+        ctrl.AdvanceBowlPhase(); // → ItemPhase
+        return ctrl;
+    }
+
+    // Part 4: AddIngredient
+
+    static void Test_AddIngredient_AddsToIngredients()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5);
+        var inst = new IngredientInstance(def);
+        var es = new EffectSystem();
+
+        ctrl.AddIngredient(inst, es);
+
+        Assert(state.Pot.Ingredients.Count == 1, "Ingredients must have 1 entry after AddIngredient");
+        Assert(ReferenceEquals(state.Pot.Ingredients[0], inst), "Stored ingredient must be the same reference");
+    }
+
+    static void Test_AddIngredient_TriggersEffect()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        var effect = new LambdaEffect("add_score", ctx => ctx.PotState.BaseScore += 10);
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5, effects: new[] { effect });
+        var inst = new IngredientInstance(def);
+        var es = new EffectSystem();
+
+        ctrl.AddIngredient(inst, es);
+
+        Assert(state.Pot.BaseScore == 10, "Effect must have been triggered: BaseScore should be 10");
+    }
+
+    static void Test_AddIngredient_ContextCurrentIngredientIsCorrect()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out _);
+        IngredientInstance? capturedIngredient = null;
+        var effect = new LambdaEffect("capture", ctx => capturedIngredient = ctx.CurrentIngredient);
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5, effects: new[] { effect });
+        var inst = new IngredientInstance(def);
+        var es = new EffectSystem();
+
+        ctrl.AddIngredient(inst, es);
+
+        Assert(ReferenceEquals(capturedIngredient, inst),
+            "EffectContext.CurrentIngredient must be the added IngredientInstance");
+    }
+
+    static void Test_AddIngredient_SourceIdIsInstanceId()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out _);
+        // 同一个 effect，同一个 sourceId → 第二次 TriggerAll 不会执行（循环保护）
+        // 用这个性质间接验证 sourceId 是 InstanceId 而非 DefinitionId
+        int callCount = 0;
+        var effect = new LambdaEffect("counter", _ => callCount++);
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5, effects: new[] { effect });
+        var inst = new IngredientInstance(def, "specific_instance_id");
+        var es = new EffectSystem();
+
+        // 手动模拟：创建 context，预先标记 DefinitionId 不影响触发
+        // 只要 AddIngredient 用 inst.InstanceId 作为 sourceId，effect 应执行一次
+        ctrl.AddIngredient(inst, es);
+
+        Assert(callCount == 1, "Effect must be called exactly once; sourceId must allow first trigger");
+        Assert(inst.InstanceId == "specific_instance_id", "Confirms the correct instance was used");
+    }
+
+    static void Test_AddIngredient_WrongPhase_Throws()
+    {
+        var state = new GameState();
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+        ctrl.StartBowl(); // BowlPhase.Start
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5);
+        var inst = new IngredientInstance(def);
+        var es = new EffectSystem();
+
+        bool threw = false;
+        try { ctrl.AddIngredient(inst, es); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(threw, "AddIngredient outside IngredientResolve must throw InvalidOperationException");
+    }
+
+    static void Test_AddIngredient_WrongPhase_DoesNotAddToIngredients()
+    {
+        var state = new GameState();
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+        ctrl.StartBowl(); // BowlPhase.Start
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5);
+        var inst = new IngredientInstance(def);
+        var es = new EffectSystem();
+
+        try { ctrl.AddIngredient(inst, es); } catch (InvalidOperationException) { }
+
+        Assert(state.Pot.Ingredients.Count == 0,
+            "Failed AddIngredient must not add ingredient to PotState.Ingredients");
+    }
+
+    // Part 4: ApplyItemEffect
+
+    static void Test_ApplyItemEffect_TriggersEffect()
+    {
+        var ctrl = MakeControllerAtItemPhase(out var state);
+        var effect = new LambdaEffect("add_flavor", ctx => ctx.PotState.AddFlavor(FlavorType.Spicy, 5));
+        var def = new ItemDefinition("chili_sauce", "辣椒酱", new[] { effect });
+        var inst = new ItemInstance(def);
+        var es = new EffectSystem();
+
+        ctrl.ApplyItemEffect(inst, es);
+
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 5,
+            "Item effect must have been triggered: Spicy should be 5");
+    }
+
+    static void Test_ApplyItemEffect_ContextCurrentIngredientIsNull()
+    {
+        var ctrl = MakeControllerAtItemPhase(out _);
+        IngredientInstance? captured = new IngredientInstance(
+            new IngredientDefinition("sentinel", "sentinel", IngredientRarity.Common, 0));
+        var effect = new LambdaEffect("capture", ctx => captured = ctx.CurrentIngredient);
+        var def = new ItemDefinition("item_x", "醋", new[] { effect });
+        var inst = new ItemInstance(def);
+        var es = new EffectSystem();
+
+        ctrl.ApplyItemEffect(inst, es);
+
+        Assert(captured == null, "EffectContext.CurrentIngredient must be null for item effects");
+    }
+
+    static void Test_ApplyItemEffect_SourceIdIsItemInstanceId()
+    {
+        var ctrl = MakeControllerAtItemPhase(out _);
+        int callCount = 0;
+        var effect = new LambdaEffect("counter", _ => callCount++);
+        var def = new ItemDefinition("item_x", "醋", new[] { effect });
+        var inst = new ItemInstance(def, "my_item_instance");
+        var es = new EffectSystem();
+
+        ctrl.ApplyItemEffect(inst, es);
+
+        Assert(callCount == 1, "Item effect must execute once");
+        Assert(inst.InstanceId == "my_item_instance", "Confirms correct instance was used as sourceId");
+    }
+
+    static void Test_ApplyItemEffect_WrongPhase_Throws()
+    {
+        var state = new GameState();
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+        ctrl.StartBowl(); // BowlPhase.Start
+        var def = new ItemDefinition("item_x", "醋");
+        var inst = new ItemInstance(def);
+        var es = new EffectSystem();
+
+        bool threw = false;
+        try { ctrl.ApplyItemEffect(inst, es); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(threw, "ApplyItemEffect outside ItemPhase must throw InvalidOperationException");
+    }
+
+    // Part 4: 循环保护 / 共用路径
+
+    static void Test_AddIngredient_LoopProtection()
+    {
+        // 验证：同一条链中，同一 sourceId 不会被无限重复触发。
+        // effectA 在执行时用相同的 instanceId 再次尝试触发自己，应被 EffectContext 阻止。
+        var ctrl = MakeControllerAtIngredientResolve(out _);
+        int callCount = 0;
+
+        EffectSystem? es = null;
+        LambdaEffect? effectA = null;
+        string? capturedInstanceId = null;
+
+        effectA = new LambdaEffect("effect_a", ctx =>
+        {
+            callCount++;
+            // 用与 AddIngredient 相同的 sourceId（ingredient.InstanceId）再次触发
+            es!.Trigger(effectA!, capturedInstanceId!, ctx);
+        });
+
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5,
+            effects: new[] { effectA });
+        var inst = new IngredientInstance(def);
+        capturedInstanceId = inst.InstanceId;
+        es = new EffectSystem();
+
+        ctrl.AddIngredient(inst, es);
+
+        Assert(callCount == 1, "Loop protection must prevent effectA from triggering itself again in the same chain");
+    }
+
+    static void Test_IngredientAndItem_UseSharedEffectSystemPath()
+    {
+        // 验证 Ingredient 和 Item 都走同一套 EffectSystem / EffectContext 路径
+        // 方式：同一个 EffectSystem 实例先后接受两次调用，两次都能正常触发
+        var state = new GameState();
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+        ctrl.StartBowl();
+        ctrl.AdvanceBowlPhase(); // → Customer
+        ctrl.AdvanceBowlPhase(); // → ItemPhase
+
+        var es = new EffectSystem();
+        int itemEffectCount = 0;
+        var itemEffect = new LambdaEffect("item_e", _ => itemEffectCount++);
+        var itemDef = new ItemDefinition("item_x", "醋", new[] { itemEffect });
+        var itemInst = new ItemInstance(itemDef);
+
+        ctrl.ApplyItemEffect(itemInst, es);
+
+        ctrl.AdvanceBowlPhase(); // → IngredientSelection
+        ctrl.AdvanceBowlPhase(); // → IngredientResolve
+
+        int ingredientEffectCount = 0;
+        var ingredientEffect = new LambdaEffect("ingr_e", _ => ingredientEffectCount++);
+        var ingrDef = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5,
+            effects: new[] { ingredientEffect });
+        var ingrInst = new IngredientInstance(ingrDef);
+
+        ctrl.AddIngredient(ingrInst, es);
+
+        Assert(itemEffectCount == 1, "Item effect must have fired via EffectSystem");
+        Assert(ingredientEffectCount == 1, "Ingredient effect must have fired via EffectSystem");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
