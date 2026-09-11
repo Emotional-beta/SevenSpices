@@ -1,3 +1,5 @@
+using SevenSpices.Core.Game;
+
 namespace SevenSpices.Core.Customers;
 
 /// <summary>
@@ -23,12 +25,12 @@ public class CustomerSatisfactionCondition
     public int Threshold { get; }
 
     /// <summary>
-    /// 当 ConditionType 为 FlavorAtLeast 时，指定目标味道类型名称。
+    /// 当 ConditionType 为 FlavorAtLeast 时，指定目标味道类型。
     /// 其他类型时为 null。
     /// </summary>
-    public string? FlavorTarget { get; }
+    public FlavorType? FlavorTarget { get; }
 
-    public CustomerSatisfactionCondition(ConditionType conditionType, int threshold, string? flavorTarget = null)
+    public CustomerSatisfactionCondition(ConditionType conditionType, int threshold, FlavorType? flavorTarget = null)
     {
         if (threshold < 0)
             throw new ArgumentOutOfRangeException(nameof(threshold), "Threshold cannot be negative.");

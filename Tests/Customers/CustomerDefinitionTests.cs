@@ -1,4 +1,5 @@
 using SevenSpices.Core.Customers;
+using SevenSpices.Core.Game;
 
 namespace SevenSpices.Tests.Customers;
 
@@ -51,10 +52,10 @@ public static class CustomerDefinitionTests
 
     static void Test_Condition_FlavorAtLeast_StoresFlavorTarget()
     {
-        var cond = new CustomerSatisfactionCondition(ConditionType.FlavorAtLeast, 10, "Sweet");
+        var cond = new CustomerSatisfactionCondition(ConditionType.FlavorAtLeast, 10, FlavorType.Sweet);
         Assert(cond.ConditionType == ConditionType.FlavorAtLeast, "ConditionType must be FlavorAtLeast");
         Assert(cond.Threshold == 10, "Threshold must be 10");
-        Assert(cond.FlavorTarget == "Sweet", "FlavorTarget must be 'Sweet'");
+        Assert(cond.FlavorTarget == FlavorType.Sweet, "FlavorTarget must be FlavorType.Sweet");
     }
 
     static void Test_Create_NoConditions_ReturnsEmptyList()
