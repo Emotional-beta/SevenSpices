@@ -1,3 +1,4 @@
+using SevenSpices.Tests.Bottom;
 using SevenSpices.Tests.Customers;
 using SevenSpices.Tests.Effects;
 using SevenSpices.Tests.Game;
@@ -29,6 +30,7 @@ public static class TestRunner
         ItemInstanceTests.RunAll();
         ItemRegistryTests.RunAll();
         ScoreCalculatorTests.RunAll();
+        BottomExtractorTests.RunAll();
         Console.WriteLine("=== All tests passed. ===");
     }
 }
