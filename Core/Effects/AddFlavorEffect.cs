@@ -8,6 +8,8 @@ namespace SevenSpices.Core.Effects;
 public sealed class AddFlavorEffect : IEffect
 {
     public string EffectId { get; }
+    public FlavorType Flavor => _flavor;
+    public int Amount => _amount;
     private readonly FlavorType _flavor;
     private readonly int _amount;
 

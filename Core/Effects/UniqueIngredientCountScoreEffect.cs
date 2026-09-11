@@ -7,6 +7,8 @@ namespace SevenSpices.Core.Effects;
 public sealed class UniqueIngredientCountScoreEffect : IEffect
 {
     public string EffectId { get; }
+    public int RequiredCount => _requiredCount;
+    public int Bonus => _bonus;
     private readonly int _requiredCount;
     private readonly int _bonus;
 

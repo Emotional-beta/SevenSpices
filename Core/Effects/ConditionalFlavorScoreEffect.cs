@@ -9,6 +9,9 @@ namespace SevenSpices.Core.Effects;
 public sealed class ConditionalFlavorScoreEffect : IEffect
 {
     public string EffectId { get; }
+    public FlavorType Flavor => _flavor;
+    public int Threshold => _threshold;
+    public int Bonus => _bonus;
     private readonly FlavorType _flavor;
     private readonly int _threshold;
     private readonly int _bonus;

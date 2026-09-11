@@ -2,6 +2,7 @@ using Godot;
 using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
+using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
 
@@ -119,6 +120,7 @@ public partial class Main : Node
             var btn = new Button();
             btn.Text = def.Name;
             btn.CustomMinimumSize = new Vector2(80, 36);
+            btn.TooltipText = BuildIngredientTooltip(def);
             btn.Pressed += () => OnIngredientPressed(capturedId);
             btnRow.AddChild(btn);
             _ingredientButtons[i] = btn;
@@ -211,4 +213,74 @@ public partial class Main : Node
         var parts = System.Array.ConvertAll(flavors, f => $"{f.label} {pot.GetFlavor(f.type)}");
         return string.Join("   ", parts);
     }
+
+    // ── 食材 Tooltip ──────────────────────────────────────────────────────────
+
+    private static string BuildIngredientTooltip(IngredientDefinition def)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"名称：{def.Name}");
+        sb.AppendLine($"稀有度：{ToRarityText(def.Rarity)}");
+        sb.AppendLine($"基础分：{def.BaseScore}");
+        sb.AppendLine($"味道：{ToFlavorListText(def.Flavors)}");
+
+        if (def.Effects.Count == 0)
+        {
+            sb.AppendLine("触发条件：无");
+            sb.AppendLine("触发效果：无");
+            sb.Append("效果类型：基础");
+        }
+        else
+        {
+            foreach (var effect in def.Effects)
+                sb.Append(DescribeEffect(effect));
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    private static string ToRarityText(IngredientRarity rarity) => rarity switch
+    {
+        IngredientRarity.Common => "普通",
+        IngredientRarity.Uncommon => "稀有",
+        IngredientRarity.Rare => "罕见",
+        IngredientRarity.Legendary => "传说",
+        _ => rarity.ToString()
+    };
+
+    private static string ToFlavorListText(IReadOnlyDictionary<FlavorType, int> flavors)
+    {
+        if (flavors.Count == 0) return "无";
+        var parts = new System.Collections.Generic.List<string>();
+        foreach (var kv in flavors)
+            parts.Add($"{ToFlavorName(kv.Key)} +{kv.Value}");
+        return string.Join("  ", parts);
+    }
+
+    private static string ToFlavorName(FlavorType flavor) => flavor switch
+    {
+        FlavorType.Umami => "鲜",
+        FlavorType.Sweet => "甜",
+        FlavorType.Spicy => "辣",
+        FlavorType.Sour => "酸",
+        FlavorType.Bitter => "苦",
+        _ => flavor.ToString()
+    };
+
+    private static string DescribeEffect(IEffect effect) => effect switch
+    {
+        ConditionalFlavorScoreEffect e =>
+            $"触发条件：{ToFlavorName(e.Flavor)} ≥ {e.Threshold}\n触发效果：额外 +{e.Bonus} 分\n效果类型：条件奖励",
+        ScaledFlavorScoreEffect e =>
+            $"触发条件：每 {e.PerN} 点{ToFlavorName(e.Flavor)}\n触发效果：+{e.Bonus} 分\n效果类型：比例奖励",
+        FinalScoreMultiplierEffect e =>
+            $"触发条件：无\n触发效果：最终分数 ×{e.Multiplier:F1}\n效果类型：分数倍率",
+        UniqueIngredientCountScoreEffect e =>
+            $"触发条件：已有 {e.RequiredCount} 种不同食材\n触发效果：+{e.Bonus} 分\n效果类型：多样奖励",
+        AddScoreEffect e =>
+            $"触发条件：无\n触发效果：+{e.Amount} 分\n效果类型：固定加分",
+        AddFlavorEffect e =>
+            $"触发条件：无\n触发效果：{ToFlavorName(e.Flavor)} +{e.Amount}\n效果类型：增味",
+        _ => $"触发条件：未知\n触发效果：{effect.EffectId}\n效果类型：未知"
+    };
 }

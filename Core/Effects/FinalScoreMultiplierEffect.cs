@@ -8,6 +8,7 @@ namespace SevenSpices.Core.Effects;
 public sealed class FinalScoreMultiplierEffect : IEffect
 {
     public string EffectId { get; }
+    public double Multiplier => _multiplier;
     private readonly double _multiplier;
 
     public FinalScoreMultiplierEffect(double multiplier, string? effectId = null)

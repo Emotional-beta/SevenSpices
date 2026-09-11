@@ -6,6 +6,7 @@ namespace SevenSpices.Core.Effects;
 public sealed class AddScoreEffect : IEffect
 {
     public string EffectId { get; }
+    public int Amount => _amount;
     private readonly int _amount;
 
     public AddScoreEffect(int amount, string? effectId = null)

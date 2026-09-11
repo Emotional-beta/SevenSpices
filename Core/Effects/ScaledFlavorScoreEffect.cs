@@ -9,6 +9,9 @@ namespace SevenSpices.Core.Effects;
 public sealed class ScaledFlavorScoreEffect : IEffect
 {
     public string EffectId { get; }
+    public FlavorType Flavor => _flavor;
+    public int PerN => _perN;
+    public int Bonus => _bonus;
     private readonly FlavorType _flavor;
     private readonly int _perN;
     private readonly int _bonus;
