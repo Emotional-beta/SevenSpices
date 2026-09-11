@@ -26,6 +26,7 @@ public static class TestRunner
         SatisfactionEvaluatorTests.RunAll();
         CustomerInstanceTests.RunAll();
         CustomerRegistryTests.RunAll();
+        CustomerServiceTests.RunAll();
         ItemDefinitionTests.RunAll();
         ItemInstanceTests.RunAll();
         ItemRegistryTests.RunAll();
