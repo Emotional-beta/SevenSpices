@@ -20,6 +20,7 @@ public static class TestRunner
         PotControllerTests.RunAll();
         CustomerDefinitionTests.RunAll();
         SatisfactionEvaluatorTests.RunAll();
+        CustomerInstanceTests.RunAll();
         Console.WriteLine("=== All Phase 1 tests passed. ===");
     }
 }
