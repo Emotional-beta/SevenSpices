@@ -29,6 +29,12 @@ public class PotState
     /// <summary>本碗分数是否已锁定。</summary>
     public bool IsScoreLocked { get; set; }
 
+    /// <summary>当前锅的生命周期阶段。</summary>
+    public PotPhase Phase { get; set; } = PotPhase.NotStarted;
+
+    /// <summary>当前碗的流程阶段。</summary>
+    public BowlPhase CurrentBowlPhase { get; set; } = BowlPhase.Start;
+
     /// <summary>获取指定味道的当前值，不存在则返回 0。</summary>
     public int GetFlavor(FlavorType flavor) =>
         Flavors.TryGetValue(flavor, out int v) ? v : 0;
