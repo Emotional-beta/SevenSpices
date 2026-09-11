@@ -26,6 +26,9 @@ public class PotState
     /// <summary>本碗最终分（倍率应用后锁定）。</summary>
     public int FinalScore { get; set; }
 
+    /// <summary>本碗最终分数的额外倍率（默认1.0）。由冰块等效果写入，在 ScoreCalculator 中应用。</summary>
+    public double FinalScoreMultiplier { get; set; } = 1.0;
+
     /// <summary>本碗分数是否已锁定。</summary>
     public bool IsScoreLocked { get; set; }
 
@@ -58,6 +61,7 @@ public class PotState
         Flavors.Clear();
         BaseScore = 0;
         FinalScore = 0;
+        FinalScoreMultiplier = 1.0;
         IsScoreLocked = false;
         Phase = PotPhase.NotStarted;
         CurrentBowlPhase = BowlPhase.Start;

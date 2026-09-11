@@ -30,6 +30,7 @@ public static class ScoreCalculator
 
     /// <summary>
     /// 根据 pot.BowlNumber 和 pot.BaseScore 计算最终分数，写入 pot.FinalScore，并锁定分数。
+    /// 应用公式：FinalScore = Floor(BaseScore × BowlMultiplier × FinalScoreMultiplier)。
     /// 如果分数已经锁定，抛出 InvalidOperationException。
     /// </summary>
     public static void CalculateAndLock(PotState pot)
@@ -39,7 +40,7 @@ public static class ScoreCalculator
         if (pot.IsScoreLocked)
             throw new InvalidOperationException("Score is already locked and cannot be calculated again.");
 
-        pot.FinalScore = pot.BaseScore * GetMultiplier(pot.BowlNumber);
+        pot.FinalScore = (int)Math.Floor(pot.BaseScore * GetMultiplier(pot.BowlNumber) * pot.FinalScoreMultiplier);
         pot.IsScoreLocked = true;
     }
 }
