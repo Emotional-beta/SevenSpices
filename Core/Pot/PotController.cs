@@ -136,12 +136,14 @@ public class PotController
                 $"Cannot add ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientResolve.");
 
         pot.Ingredients.Add(ingredient);
+        int scoreBefore = pot.BaseScore;
         pot.BaseScore += ingredient.Definition.BaseScore;
         foreach (var (flavor, amount) in ingredient.Definition.Flavors)
             pot.AddFlavor(flavor, amount);
 
         var context = new EffectContext(pot.BowlNumber, _gameState, pot, ingredient);
         effectSystem.TriggerAll(ingredient.Definition.Effects, ingredient.InstanceId, context);
+        pot.TotalBaseScore += pot.BaseScore - scoreBefore;
     }
 
     /// <summary>

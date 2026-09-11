@@ -20,6 +20,7 @@ public partial class Main : Node
     private Label _phaseLabel = null!;
     private Label _bowlLabel = null!;
     private Label _scoreLabel = null!;
+    private Label _totalScoreLabel = null!;
     private Label _flavorLabel = null!;
 
     public override void _Ready()
@@ -87,6 +88,8 @@ public partial class Main : Node
         vbox.AddChild(_bowlLabel);
         _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 28);
         vbox.AddChild(_scoreLabel);
+        _totalScoreLabel = MakeLabel("本锅累计基础分：0", center: true, minHeight: 28);
+        vbox.AddChild(_totalScoreLabel);
 
         var sep1 = new HSeparator();
         sep1.CustomMinimumSize = new Vector2(0, 10);
@@ -168,6 +171,7 @@ public partial class Main : Node
         _phaseLabel.Text = $"阶段：{ToBowlPhaseText(pot.CurrentBowlPhase)}";
         _bowlLabel.Text = $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
         _scoreLabel.Text = $"基础分：{pot.BaseScore}";
+        _totalScoreLabel.Text = $"本锅累计基础分：{pot.TotalBaseScore}";
         _flavorLabel.Text = ToFlavorText(pot);
 
         bool canAct = pot.Phase == PotPhase.InProgress

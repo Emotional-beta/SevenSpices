@@ -20,8 +20,11 @@ public class PotState
     /// <summary>锅内当前各味道等级。</summary>
     public Dictionary<FlavorType, int> Flavors { get; } = new();
 
-    /// <summary>本碗当前基础分（效果结算中累积）。</summary>
+    /// <summary>本碗当前基础分（效果结算中累积）。每碗 StartBowl 时归零。</summary>
     public int BaseScore { get; set; }
+
+    /// <summary>本锅所有已完成碗的基础分累计（含效果加成）。StartPot 时归零，不随 StartBowl 重置。</summary>
+    public int TotalBaseScore { get; set; }
 
     /// <summary>本碗最终分（倍率应用后锁定）。</summary>
     public int FinalScore { get; set; }
@@ -61,6 +64,7 @@ public class PotState
         Flavors.Clear();
         BaseScore = 0;
         FinalScore = 0;
+        TotalBaseScore = 0;
         FinalScoreMultiplier = 1.0;
         IsScoreLocked = false;
         Phase = PotPhase.NotStarted;
