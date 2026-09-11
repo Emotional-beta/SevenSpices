@@ -8,4 +8,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Tests\**\*.cs" />
+    <Compile Remove="Tests.Runner\**\*.cs" />
+  </ItemGroup>
 </Project>
