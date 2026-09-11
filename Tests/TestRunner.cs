@@ -23,6 +23,7 @@ public static class TestRunner
         CustomerDefinitionTests.RunAll();
         SatisfactionEvaluatorTests.RunAll();
         CustomerInstanceTests.RunAll();
+        CustomerRegistryTests.RunAll();
         ItemDefinitionTests.RunAll();
         ItemInstanceTests.RunAll();
         Console.WriteLine("=== All Phase 1 tests passed. ===");
