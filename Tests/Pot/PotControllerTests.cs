@@ -1,3 +1,4 @@
+using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
@@ -47,6 +48,13 @@ public static class PotControllerTests
         // Part 4: 循环保护 / 共用 EffectSystem 路径
         Test_AddIngredient_LoopProtection();
         Test_IngredientAndItem_UseSharedEffectSystemPath();
+        // Part 5: BaseScore / Flavor 自动应用
+        Test_AddIngredient_AutoAppliesBaseScore();
+        Test_AddIngredient_AutoAppliesFlavors();
+        Test_AddIngredient_BaseScoreAndFlavorAndEffect_AllApplied();
+        Test_AddIngredient_Honey_FlavorAutoApplied_Then_ScaledEffect();
+        Test_AddIngredient_IceCube_MultiplierEffect_FinalScore();
+        Test_AddIngredient_Egg_UniqueCount_WithAutoApply();
 
         Console.WriteLine("All PotControllerTests passed.");
     }
@@ -435,7 +443,7 @@ public static class PotControllerTests
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         var effect = new LambdaEffect("add_score", ctx => ctx.PotState.BaseScore += 10);
-        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5, effects: new[] { effect });
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 0, effects: new[] { effect });
         var inst = new IngredientInstance(def);
         var es = new EffectSystem();
 
@@ -637,6 +645,97 @@ public static class PotControllerTests
 
         Assert(itemEffectCount == 1, "Item effect must have fired via EffectSystem");
         Assert(ingredientEffectCount == 1, "Ingredient effect must have fired via EffectSystem");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Part 5: BaseScore / Flavor 自动应用
+
+    static void Test_AddIngredient_AutoAppliesBaseScore()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        var def = new IngredientDefinition("filler", "填充", IngredientRarity.Common, 5);
+        var es = new EffectSystem();
+
+        ctrl.AddIngredient(new IngredientInstance(def), es);
+
+        Assert(state.Pot.BaseScore == 5, "AddIngredient 应自动将 Definition.BaseScore(5) 应用到 PotState");
+    }
+
+    static void Test_AddIngredient_AutoAppliesFlavors()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        var def = new IngredientDefinition("filler", "填充", IngredientRarity.Common, 0,
+            flavors: new() { [FlavorType.Sweet] = 2 });
+        var es = new EffectSystem();
+
+        ctrl.AddIngredient(new IngredientInstance(def), es);
+
+        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 2,
+            "AddIngredient 应自动将 Definition.Flavors(Sweet+2) 应用到 PotState");
+    }
+
+    static void Test_AddIngredient_BaseScoreAndFlavorAndEffect_AllApplied()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        var effect = new LambdaEffect("add_score_5", ctx => ctx.PotState.BaseScore += 5);
+        var def = new IngredientDefinition("filler", "填充", IngredientRarity.Common, 3,
+            flavors: new() { [FlavorType.Spicy] = 1 },
+            effects: new[] { effect });
+        var es = new EffectSystem();
+
+        ctrl.AddIngredient(new IngredientInstance(def), es);
+
+        Assert(state.Pot.BaseScore == 8, "BaseScore = 3(基础分) + 5(效果) = 8");
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 1, "Flavor 自动应用：辣=1");
+    }
+
+    static void Test_AddIngredient_Honey_FlavorAutoApplied_Then_ScaledEffect()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        state.Pot.AddFlavor(FlavorType.Sweet, 2); // 预置甜=2
+        var es = new EffectSystem();
+
+        ctrl.AddIngredient(IngredientData.CreateInstance("honey"), es);
+
+        // 蜂蜜：自动应用 Sweet+1 → Sweet=3；基础分=2
+        // ScaledFlavorScoreEffect：floor(3/3)*2=2 → BaseScore+=2
+        Assert(state.Pot.BaseScore == 4, "蜂蜜：2(基础分) + 2(ScaledFlavor:甜3/3*2) = 4");
+        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 3, "蜂蜜自动应用甜+1：2+1=3");
+    }
+
+    static void Test_AddIngredient_IceCube_MultiplierEffect_FinalScore()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        var es = new EffectSystem();
+
+        // 先加一个 BaseScore=10 的填充食材
+        var filler = new IngredientDefinition("filler", "填充", IngredientRarity.Common, 10);
+        ctrl.AddIngredient(new IngredientInstance(filler), es);
+
+        // 加入冰块：BaseScore=0，FinalScoreMultiplier × 1.5
+        ctrl.AddIngredient(IngredientData.CreateInstance("ice_cube"), es);
+
+        ctrl.AdvanceBowlPhase(); // → ScoreCalculation
+        ctrl.CalculateScore();
+
+        // Bowl1：floor(10 * 1 * 1.5) = 15
+        Assert(state.Pot.FinalScore == 15, "冰块：BaseScore=10, Bowl1 倍率×1, FinalScoreMultiplier=1.5 → FinalScore=15");
+    }
+
+    static void Test_AddIngredient_Egg_UniqueCount_WithAutoApply()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        var es = new EffectSystem();
+
+        ctrl.AddIngredient(IngredientData.CreateInstance("rice"), es);   // BaseScore=1, Umami+1
+        ctrl.AddIngredient(IngredientData.CreateInstance("sugar"), es);  // BaseScore=2, Sweet+1
+        ctrl.AddIngredient(IngredientData.CreateInstance("egg"), es);    // BaseScore=3, Umami+1, 3种不同→+3
+
+        // BaseScore = 1 + 2 + 3 + 3(效果) = 9
+        Assert(state.Pot.BaseScore == 9, "米饭+糖+鸡蛋：BaseScore = 1+2+3+3(鸡蛋效果) = 9");
+        Assert(state.Pot.GetFlavor(FlavorType.Umami) == 2, "米饭鲜+1，鸡蛋鲜+1：鲜=2");
+        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 1, "糖甜+1：甜=1");
+        Assert(state.Pot.Ingredients.Count == 3, "锅中应有3个食材实例");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

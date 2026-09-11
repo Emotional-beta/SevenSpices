@@ -122,7 +122,8 @@ public class PotController
     }
 
     /// <summary>
-    /// 在 IngredientResolve 阶段将食材加入锅，并通过 EffectSystem 触发其效果链。
+    /// 在 IngredientResolve 阶段将食材加入锅：先应用 Definition.BaseScore 和 Definition.Flavors，
+    /// 再通过 EffectSystem 触发效果链。效果触发时能读到包含本食材基础数据的最新状态。
     /// </summary>
     public void AddIngredient(IngredientInstance ingredient, EffectSystem effectSystem)
     {
@@ -135,6 +136,9 @@ public class PotController
                 $"Cannot add ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientResolve.");
 
         pot.Ingredients.Add(ingredient);
+        pot.BaseScore += ingredient.Definition.BaseScore;
+        foreach (var (flavor, amount) in ingredient.Definition.Flavors)
+            pot.AddFlavor(flavor, amount);
 
         var context = new EffectContext(pot.BowlNumber, _gameState, pot, ingredient);
         effectSystem.TriggerAll(ingredient.Definition.Effects, ingredient.InstanceId, context);

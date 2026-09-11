@@ -31,20 +31,13 @@ public static class FullCoreRunTests
     // ── 辅助 ─────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// 将食材的 BaseScore 和 Flavors 应用到 PotState，然后触发食材 Effects。
-    /// 模拟完整食材入锅流程（Definition 数据驱动）。
+    /// 从正式 IngredientData 创建实例并投入锅。
+    /// PotController.AddIngredient 会自动应用 BaseScore 和 Flavors，然后触发 Effects。
     /// </summary>
     static void AddOfficialIngredient(
         PotController ctrl, GameState state,
         IngredientDefinition def, EffectSystem es)
     {
-        // 在 IngredientResolve 阶段，先把基础分和味道手动加到 PotState
-        // （当前架构中 PotController.AddIngredient 触发 Effects 但不自动应用 BaseScore/Flavors）
-        state.Pot.BaseScore += def.BaseScore;
-        foreach (var (flavor, value) in def.Flavors)
-            state.Pot.AddFlavor(flavor, value);
-
-        // 触发 Effects（包含条件加分、倍率等）
         var inst = IngredientData.CreateInstance(def.Id);
         ctrl.AddIngredient(inst, es);
     }

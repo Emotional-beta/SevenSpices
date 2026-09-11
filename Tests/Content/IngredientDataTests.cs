@@ -72,25 +72,8 @@ public static class IngredientDataTests
     static void AddIngredient(PotController ctrl, GameState state, IngredientDefinition def)
     {
         var inst = new IngredientInstance(def);
-        // 手动将 BaseScore 和 Flavor 通过食材 Definition 注入（模拟 Effect 自动处理）
-        // 但此处我们要走完整 Effect 路径，所以 Definition.Effects 必须包含相关效果
-        // 用 EffectSystem 走真实路径
         var es = new EffectSystem();
-        // 先注入 BaseScore 和 Flavor（食材进锅时，调用方负责应用 BaseScore 和基础 Flavor）
-        // 当前架构：IngredientDefinition.BaseScore 和 Flavors 是数据，
-        // AddIngredient 只触发 Effects 列表，不自动应用 BaseScore/Flavors。
-        // 所以我们需要在 Effects 中包含 AddScore 和 AddFlavor，
-        // 或者在测试中手动应用。
-        // 检查：PotController.AddIngredient 只做 TriggerAll(ingredient.Definition.Effects, ...)
-        // 不自动把 BaseScore/Flavors 加到 Pot — 这需要 Effects 包含相应操作。
-        // IngredientData 的 Definition 中：
-        //   米饭：flavors 有 Umami+1，但没有 AddFlavorEffect 在 effects 列表
-        //   这意味着当前架构中 Flavor 和 BaseScore 需要通过 Effect 添加，
-        //   OR 调用方在 AddIngredient 前后手动处理。
-        // 设计文档期望食材 Effects 处理这些——所以我们需要在 Definition.Effects 中包含 AddFlavor 和 AddScore。
-        // 但 IngredientData 目前没有这样做。
-        // 结论：IngredientData 需要在 effects 中包含 AddScoreEffect + AddFlavorEffect。
-        // 这个问题在设计时需要注意，见下面的架构注释。
+        // PotController.AddIngredient 自动应用 BaseScore 和 Flavors，然后触发 Effects。
         ctrl.AddIngredient(inst, es);
     }
 
