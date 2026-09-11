@@ -8,14 +8,12 @@ namespace SevenSpices.Core.Customers;
 public class CustomerInstance
 {
     public string InstanceId { get; }
-    public string DefinitionId { get; }
+    public CustomerDefinition Definition { get; }
 
-    public CustomerInstance(string definitionId, string? instanceId = null)
+    public CustomerInstance(CustomerDefinition definition, string? instanceId = null)
     {
-        if (string.IsNullOrWhiteSpace(definitionId))
-            throw new ArgumentException("CustomerInstance DefinitionId cannot be empty.", nameof(definitionId));
-
-        DefinitionId = definitionId;
+        ArgumentNullException.ThrowIfNull(definition);
+        Definition = definition;
         InstanceId = string.IsNullOrWhiteSpace(instanceId)
             ? Guid.NewGuid().ToString()
             : instanceId;
