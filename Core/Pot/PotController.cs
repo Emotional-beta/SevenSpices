@@ -1,7 +1,9 @@
+using SevenSpices.Core.Bottom;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
+using SevenSpices.Core.Scoring;
 
 namespace SevenSpices.Core.Pot;
 
@@ -154,5 +156,33 @@ public class PotController
 
         var context = new EffectContext(pot.BowlNumber, _gameState, pot, currentIngredient: null);
         effectSystem.TriggerAll(item.Definition.Effects, item.InstanceId, context);
+    }
+
+    /// <summary>
+    /// 在 ScoreCalculation 阶段计算并锁定本碗分数。
+    /// 调用 ScoreCalculator.CalculateAndLock，将 BaseScore × 倍率写入 FinalScore 并锁定。
+    /// </summary>
+    public void CalculateScore()
+    {
+        var pot = _gameState.Pot;
+        if (pot.CurrentBowlPhase != BowlPhase.ScoreCalculation)
+            throw new InvalidOperationException(
+                $"Cannot calculate score: current bowl phase is {pot.CurrentBowlPhase}, expected ScoreCalculation.");
+
+        ScoreCalculator.CalculateAndLock(pot);
+    }
+
+    /// <summary>
+    /// 锅结束后提炼锅底：从当前 PotState 的 Flavor 提取 30% 写入 BottomState。
+    /// 只能在 PotPhase.Ended 时调用，是普通锅与最终锅共用的锅级收尾入口。
+    /// </summary>
+    public void ClosePot()
+    {
+        var pot = _gameState.Pot;
+        if (pot.Phase != PotPhase.Ended)
+            throw new InvalidOperationException(
+                $"Cannot close pot: pot phase is {pot.Phase}, expected Ended.");
+
+        BottomExtractor.Extract(pot, _gameState.Bottom);
     }
 }
