@@ -26,16 +26,19 @@ theme_override_constants/margin_bottom = 20
 
 [node name="VBoxContainer" type="VBoxContainer" parent="Main/UI/MarginContainer"]
 layout_mode = 2
-theme_override_constants/separation = 10
+theme_override_constants/separation = 20
 
 [node name="TitleLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
 layout_mode = 2
+custom_minimum_size = Vector2(0, 40)
 text = "七荤八素"
 horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="RunInfoRow" type="HBoxContainer" parent="Main/UI/MarginContainer/VBoxContainer"]
 layout_mode = 2
-theme_override_constants/separation = 20
+alignment = 1
+theme_override_constants/separation = 40
 
 [node name="ChapterLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer/RunInfoRow"]
 layout_mode = 2
@@ -49,27 +52,43 @@ text = "第 1 锅"
 
 [node name="PhaseLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
 layout_mode = 2
-unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
 text = "阶段：开始"
+horizontal_alignment = 1
+vertical_alignment = 1
+unique_name_in_owner = true
 
 [node name="BowlLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
 layout_mode = 2
-unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
 text = "碗数：1 / 10"
+horizontal_alignment = 1
+vertical_alignment = 1
+unique_name_in_owner = true
 
 [node name="ScoreLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
 layout_mode = 2
-unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
 text = "基础分：0"
+horizontal_alignment = 1
+vertical_alignment = 1
+unique_name_in_owner = true
 
 [node name="HSeparator" type="HSeparator" parent="Main/UI/MarginContainer/VBoxContainer"]
 layout_mode = 2
+custom_minimum_size = Vector2(0, 10)
 
 [node name="FlavorTitleLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
 layout_mode = 2
+custom_minimum_size = Vector2(0, 28)
 text = "味道"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="FlavorLabel" type="Label" parent="Main/UI/MarginContainer/VBoxContainer"]
 layout_mode = 2
-unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 28)
 text = "鲜 0   甜 0   辣 0   酸 0   苦 0"
+horizontal_alignment = 1
+vertical_alignment = 1
+unique_name_in_owner = true
