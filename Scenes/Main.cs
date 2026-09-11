@@ -14,6 +14,7 @@ public partial class Main : Node
     private PotController _potController = null!;
     private EffectSystem _effectSystem = null!;
     private Button[] _ingredientButtons = null!;
+    private Button _completeBowlButton = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
@@ -30,9 +31,9 @@ public partial class Main : Node
 
         _runController.StartRun();
         _potController = _runController.StartCurrentPot();
-        _potController.StartBowl();
 
-        // Start → Customer → ItemPhase → IngredientSelection → IngredientResolve
+        // 正式开始第 1 碗，并推进到 IngredientResolve
+        _potController.StartBowl();
         for (int i = 0; i < 4; i++)
             _potController.AdvanceBowlPhase();
 
@@ -48,7 +49,6 @@ public partial class Main : Node
 
     private void BuildUI()
     {
-        // 全屏 Control 层
         var uiRoot = new Control();
         uiRoot.AnchorRight = 1.0f;
         uiRoot.AnchorBottom = 1.0f;
@@ -56,7 +56,6 @@ public partial class Main : Node
         uiRoot.GrowVertical = Control.GrowDirection.Both;
         AddChild(uiRoot);
 
-        // 边距容器
         var margin = new MarginContainer();
         margin.AnchorRight = 1.0f;
         margin.AnchorBottom = 1.0f;
@@ -68,15 +67,12 @@ public partial class Main : Node
         margin.AddThemeConstantOverride("margin_bottom", 20);
         uiRoot.AddChild(margin);
 
-        // 垂直布局
         var vbox = new VBoxContainer();
         vbox.AddThemeConstantOverride("separation", 20);
         margin.AddChild(vbox);
 
-        // 标题
         vbox.AddChild(MakeLabel("七荤八素", center: true, minHeight: 40));
 
-        // 章/锅信息行
         var runRow = new HBoxContainer();
         runRow.Alignment = BoxContainer.AlignmentMode.Center;
         runRow.AddThemeConstantOverride("separation", 40);
@@ -86,7 +82,6 @@ public partial class Main : Node
         _potLabel = MakeLabel("第 1 锅");
         runRow.AddChild(_potLabel);
 
-        // 状态标签
         _phaseLabel = MakeLabel("阶段：--", center: true, minHeight: 28);
         vbox.AddChild(_phaseLabel);
         _bowlLabel = MakeLabel("碗数：-- / --", center: true, minHeight: 28);
@@ -94,17 +89,14 @@ public partial class Main : Node
         _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 28);
         vbox.AddChild(_scoreLabel);
 
-        // 分隔线
         var sep1 = new HSeparator();
         sep1.CustomMinimumSize = new Vector2(0, 10);
         vbox.AddChild(sep1);
 
-        // 味道
         vbox.AddChild(MakeLabel("味道", center: true, minHeight: 28));
         _flavorLabel = MakeLabel("--", center: true, minHeight: 28);
         vbox.AddChild(_flavorLabel);
 
-        // 食材区
         var sep2 = new HSeparator();
         sep2.CustomMinimumSize = new Vector2(0, 10);
         vbox.AddChild(sep2);
@@ -129,6 +121,20 @@ public partial class Main : Node
             btnRow.AddChild(btn);
             _ingredientButtons[i] = btn;
         }
+
+        // 完成本碗按钮
+        var sep3 = new HSeparator();
+        sep3.CustomMinimumSize = new Vector2(0, 10);
+        vbox.AddChild(sep3);
+
+        _completeBowlButton = new Button();
+        _completeBowlButton.Text = "完成本碗";
+        _completeBowlButton.CustomMinimumSize = new Vector2(160, 40);
+        _completeBowlButton.Pressed += OnCompleteBowlPressed;
+        var completeBowlRow = new HBoxContainer();
+        completeBowlRow.Alignment = BoxContainer.AlignmentMode.Center;
+        completeBowlRow.AddChild(_completeBowlButton);
+        vbox.AddChild(completeBowlRow);
     }
 
     private static Label MakeLabel(string text, bool center = false, int minHeight = 0)
@@ -152,6 +158,25 @@ public partial class Main : Node
         RefreshUI();
     }
 
+    private void OnCompleteBowlPressed()
+    {
+        var pot = _gameState.Pot;
+
+        // 从 IngredientResolve 推进到 End（共 5 步）
+        while (pot.CurrentBowlPhase != BowlPhase.End && pot.Phase == PotPhase.InProgress)
+            _potController.AdvanceBowlPhase();
+
+        // 未达上限则开始下一碗，并推进到 IngredientResolve
+        if (pot.Phase == PotPhase.InProgress)
+        {
+            _potController.StartNextBowl();
+            for (int i = 0; i < 4; i++)
+                _potController.AdvanceBowlPhase();
+        }
+
+        RefreshUI();
+    }
+
     private void RefreshUI()
     {
         var run = _gameState.Run;
@@ -160,14 +185,15 @@ public partial class Main : Node
         _chapterLabel.Text = $"第 {run.Chapter} 章";
         _potLabel.Text = $"第 {run.PotIndex} 锅";
         _phaseLabel.Text = $"阶段：{ToBowlPhaseText(pot.CurrentBowlPhase)}";
-        _bowlLabel.Text = $"碗数：{pot.Ingredients.Count} / {ToBowlLimitText(pot.BowlLimit)}";
+        _bowlLabel.Text = $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
         _scoreLabel.Text = $"基础分：{pot.BaseScore}";
         _flavorLabel.Text = ToFlavorText(pot);
 
-        bool canAdd = pot.Ingredients.Count < pot.BowlLimit
+        bool canAct = pot.Phase == PotPhase.InProgress
                       && pot.CurrentBowlPhase == BowlPhase.IngredientResolve;
         foreach (var btn in _ingredientButtons)
-            btn.Disabled = !canAdd;
+            btn.Disabled = !canAct;
+        _completeBowlButton.Disabled = !canAct;
     }
 
     private static string ToBowlPhaseText(BowlPhase phase) => phase switch
