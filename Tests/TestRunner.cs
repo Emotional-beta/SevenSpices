@@ -16,6 +16,7 @@ public static class TestRunner
     public static void RunAll()
     {
         IngredientPoolTests.RunAll();
+        IngredientRegistryTests.RunAll();
         GameStateTests.RunAll();
         EffectSystemTests.RunAll();
         PotControllerTests.RunAll();
