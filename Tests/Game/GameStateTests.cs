@@ -1,5 +1,6 @@
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
+using SevenSpices.Core.Items;
 
 namespace SevenSpices.Tests.Game;
 
@@ -11,6 +12,7 @@ public static class GameStateTests
     public static void RunAll()
     {
         Test_GameState_DefaultValues();
+        Test_PlayerState_Items_IsItemInstanceList();
         Test_BottomState_ApplyToPot();
         Test_BottomState_ApplyToPot_DoesNotRepeatOnSecondCall();
         Test_PotState_FlavorAccumulation();
@@ -29,6 +31,19 @@ public static class GameStateTests
         Assert(state.Run!.Chapter == 1, "Default chapter should be 1");
         Assert(state.Pot!.BowlNumber == 1, "Default bowl number should be 1");
         Assert(state.Pot!.BowlLimit == 10, "Default bowl limit should be 10");
+    }
+
+    static void Test_PlayerState_Items_IsItemInstanceList()
+    {
+        var player = new PlayerState();
+        Assert(player.Items != null, "Items must not be null");
+        Assert(player.Items.Count == 0, "Items must be empty by default");
+
+        var def = new ItemDefinition("item_001", "辣椒酱");
+        var inst = new ItemInstance(def);
+        player.Items.Add(inst);
+        Assert(player.Items.Count == 1, "Items must accept ItemInstance");
+        Assert(ReferenceEquals(player.Items[0].Definition, def), "Stored item must reference the correct definition");
     }
 
     static void Test_BottomState_ApplyToPot()

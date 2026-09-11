@@ -1,4 +1,5 @@
 using SevenSpices.Core.Ingredients;
+using SevenSpices.Core.Items;
 
 namespace SevenSpices.Core.Game;
 
@@ -14,8 +15,8 @@ public class PlayerState
     /// <summary>当前金币。</summary>
     public int Gold { get; set; }
 
-    /// <summary>道具槽位（Phase 2 填充）。</summary>
-    public List<string> Items { get; } = new();
+    /// <summary>玩家当前持有的道具实例。</summary>
+    public List<ItemInstance> Items { get; } = new();
 
     /// <summary>伙伴槽位（Phase 2 填充）。</summary>
     public List<string> Companions { get; } = new();
