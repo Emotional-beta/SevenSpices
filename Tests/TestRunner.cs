@@ -8,14 +8,14 @@ using SevenSpices.Tests.Pot;
 namespace SevenSpices.Tests;
 
 /// <summary>
-/// Phase 1 核心模拟器测试入口。
-/// 在没有 UI 的情况下验证基础数据结构是否正确。
+/// Phase 1 &amp; Phase 2 核心模拟器测试入口。
 /// </summary>
 public static class TestRunner
 {
     public static void RunAll()
     {
         IngredientPoolTests.RunAll();
+        IngredientDefinitionTests.RunAll();
         IngredientRegistryTests.RunAll();
         GameStateTests.RunAll();
         EffectSystemTests.RunAll();
@@ -27,6 +27,6 @@ public static class TestRunner
         ItemDefinitionTests.RunAll();
         ItemInstanceTests.RunAll();
         ItemRegistryTests.RunAll();
-        Console.WriteLine("=== All Phase 1 tests passed. ===");
+        Console.WriteLine("=== All tests passed. ===");
     }
 }

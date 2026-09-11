@@ -1,3 +1,5 @@
+using SevenSpices.Core.Effects;
+
 namespace SevenSpices.Core.Items;
 
 /// <summary>
@@ -9,7 +11,12 @@ public class ItemDefinition
     public string Id { get; }
     public string Name { get; }
 
-    public ItemDefinition(string id, string name)
+    /// <summary>
+    /// 道具携带的效果列表。使用时由 EffectSystem 按顺序触发。
+    /// </summary>
+    public IReadOnlyList<IEffect> Effects { get; }
+
+    public ItemDefinition(string id, string name, IEnumerable<IEffect>? effects = null)
     {
         if (string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("ItemDefinition Id cannot be empty.", nameof(id));
@@ -18,5 +25,8 @@ public class ItemDefinition
 
         Id = id;
         Name = name;
+        Effects = effects != null
+            ? effects.ToList().AsReadOnly()
+            : new List<IEffect>().AsReadOnly();
     }
 }

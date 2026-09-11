@@ -1,3 +1,4 @@
+using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 
 namespace SevenSpices.Core.Ingredients;
@@ -18,12 +19,18 @@ public class IngredientDefinition
     /// </summary>
     public IReadOnlyDictionary<FlavorType, int> Flavors { get; }
 
+    /// <summary>
+    /// 食材携带的效果列表。加入锅时由 EffectSystem 按顺序触发。
+    /// </summary>
+    public IReadOnlyList<IEffect> Effects { get; }
+
     public IngredientDefinition(
         string id,
         string name,
         IngredientRarity rarity,
         int baseScore,
-        Dictionary<FlavorType, int>? flavors = null)
+        Dictionary<FlavorType, int>? flavors = null,
+        IEnumerable<IEffect>? effects = null)
     {
         if (string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("IngredientDefinition Id cannot be empty.", nameof(id));
@@ -39,5 +46,8 @@ public class IngredientDefinition
         Flavors = flavors != null
             ? new Dictionary<FlavorType, int>(flavors)
             : new Dictionary<FlavorType, int>();
+        Effects = effects != null
+            ? effects.ToList().AsReadOnly()
+            : new List<IEffect>().AsReadOnly();
     }
 }
