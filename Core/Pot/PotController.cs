@@ -1,4 +1,5 @@
 using SevenSpices.Core.Game;
+using SevenSpices.Core.Items;
 
 namespace SevenSpices.Core.Pot;
 
@@ -93,5 +94,26 @@ public class PotController
         if (pot.Phase != PotPhase.InProgress)
             throw new InvalidOperationException($"Cannot end pot: pot phase is {pot.Phase}.");
         pot.Phase = PotPhase.Ended;
+    }
+
+    /// <summary>
+    /// 在 ItemPhase 阶段消耗一个道具。
+    /// 从 PlayerState.Items 中移除并返回对应 ItemInstance，不执行任何效果。
+    /// </summary>
+    public ItemInstance UseItem(string instanceId)
+    {
+        var pot = _gameState.Pot;
+        if (pot.CurrentBowlPhase != BowlPhase.ItemPhase)
+            throw new InvalidOperationException($"Cannot use item: current bowl phase is {pot.CurrentBowlPhase}, expected ItemPhase.");
+
+        if (string.IsNullOrWhiteSpace(instanceId))
+            throw new ArgumentException("instanceId cannot be empty.", nameof(instanceId));
+
+        var items = _gameState.Player.Items;
+        var item = items.FirstOrDefault(i => i.InstanceId == instanceId)
+            ?? throw new ArgumentException($"Item instance '{instanceId}' not found in PlayerState.Items.", nameof(instanceId));
+
+        items.Remove(item);
+        return item;
     }
 }

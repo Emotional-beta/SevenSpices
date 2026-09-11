@@ -1,4 +1,5 @@
 using SevenSpices.Core.Game;
+using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 
 namespace SevenSpices.Tests.Pot;
@@ -23,6 +24,10 @@ public static class PotControllerTests
         Test_FinalPot_CanStartEleventhBowl();
         Test_StartPot_CannotBeCalledTwice();
         Test_AdvanceBowlPhase_ThrowsWhenAtEnd();
+        Test_UseItem_OutsideItemPhase_Throws();
+        Test_UseItem_ConsumesItemAndReturnsIt();
+        Test_UseItem_RemovedFromPlayerItems();
+        Test_UseItem_UnknownInstanceId_Throws();
 
         Console.WriteLine("All PotControllerTests passed.");
     }
@@ -287,6 +292,80 @@ public static class PotControllerTests
         catch (InvalidOperationException) { threw = true; }
 
         Assert(threw, "AdvanceBowlPhase at BowlPhase.End should throw InvalidOperationException");
+    }
+
+    static void Test_UseItem_OutsideItemPhase_Throws()
+    {
+        var state = new GameState();
+        var controller = new PotController(state);
+        controller.StartPot();
+        controller.StartBowl();
+        // 当前阶段是 BowlPhase.Start，不是 ItemPhase
+
+        var def = new ItemDefinition("item_001", "辣椒酱");
+        state.Player.Items.Add(new ItemInstance(def, "inst_001"));
+
+        bool threw = false;
+        try { controller.UseItem("inst_001"); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(threw, "UseItem outside ItemPhase should throw InvalidOperationException");
+    }
+
+    static void Test_UseItem_ConsumesItemAndReturnsIt()
+    {
+        var state = new GameState();
+        var controller = new PotController(state);
+        controller.StartPot();
+        controller.StartBowl();
+        controller.AdvanceBowlPhase(); // → Customer
+        controller.AdvanceBowlPhase(); // → ItemPhase
+
+        var def = new ItemDefinition("item_001", "辣椒酱");
+        var inst = new ItemInstance(def, "inst_001");
+        state.Player.Items.Add(inst);
+
+        var returned = controller.UseItem("inst_001");
+
+        Assert(ReferenceEquals(returned, inst), "UseItem must return the exact ItemInstance that was consumed");
+        Assert(returned.InstanceId == "inst_001", "Returned instance must have correct InstanceId");
+        Assert(ReferenceEquals(returned.Definition, def), "Returned instance must reference the correct definition");
+    }
+
+    static void Test_UseItem_RemovedFromPlayerItems()
+    {
+        var state = new GameState();
+        var controller = new PotController(state);
+        controller.StartPot();
+        controller.StartBowl();
+        controller.AdvanceBowlPhase(); // → Customer
+        controller.AdvanceBowlPhase(); // → ItemPhase
+
+        var def = new ItemDefinition("item_002", "醋");
+        state.Player.Items.Add(new ItemInstance(def, "inst_a"));
+        state.Player.Items.Add(new ItemInstance(def, "inst_b"));
+
+        controller.UseItem("inst_a");
+
+        Assert(state.Player.Items.Count == 1, "PlayerState.Items should have 1 item remaining after UseItem");
+        Assert(state.Player.Items[0].InstanceId == "inst_b", "Remaining item should be inst_b");
+        Assert(!state.Player.Items.Any(i => i.InstanceId == "inst_a"), "Consumed item must not remain in PlayerState.Items");
+    }
+
+    static void Test_UseItem_UnknownInstanceId_Throws()
+    {
+        var state = new GameState();
+        var controller = new PotController(state);
+        controller.StartPot();
+        controller.StartBowl();
+        controller.AdvanceBowlPhase(); // → Customer
+        controller.AdvanceBowlPhase(); // → ItemPhase
+
+        bool threw = false;
+        try { controller.UseItem("nonexistent_id"); }
+        catch (ArgumentException) { threw = true; }
+
+        Assert(threw, "UseItem with unknown instanceId should throw ArgumentException");
     }
 
     // ─────────────────────────────────────────────────────────────────────────
