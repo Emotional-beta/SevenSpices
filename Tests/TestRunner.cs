@@ -4,11 +4,12 @@ using SevenSpices.Tests.Game;
 using SevenSpices.Tests.Ingredients;
 using SevenSpices.Tests.Items;
 using SevenSpices.Tests.Pot;
+using SevenSpices.Tests.Scoring;
 
 namespace SevenSpices.Tests;
 
 /// <summary>
-/// Phase 1 &amp; Phase 2 核心模拟器测试入口。
+/// Phase 1 &amp; Phase 2 &amp; Phase 3 核心模拟器测试入口。
 /// </summary>
 public static class TestRunner
 {
@@ -27,6 +28,7 @@ public static class TestRunner
         ItemDefinitionTests.RunAll();
         ItemInstanceTests.RunAll();
         ItemRegistryTests.RunAll();
+        ScoreCalculatorTests.RunAll();
         Console.WriteLine("=== All tests passed. ===");
     }
 }
