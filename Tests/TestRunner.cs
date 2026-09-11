@@ -5,6 +5,7 @@ using SevenSpices.Tests.Game;
 using SevenSpices.Tests.Ingredients;
 using SevenSpices.Tests.Items;
 using SevenSpices.Tests.Pot;
+using SevenSpices.Tests.Run;
 using SevenSpices.Tests.Scoring;
 
 namespace SevenSpices.Tests;
@@ -33,6 +34,7 @@ public static class TestRunner
         ItemRegistryTests.RunAll();
         ScoreCalculatorTests.RunAll();
         BottomExtractorTests.RunAll();
+        RunControllerTests.RunAll();
         Console.WriteLine("=== All tests passed. ===");
     }
 }

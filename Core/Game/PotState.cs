@@ -45,4 +45,21 @@ public class PotState
         if (amount == 0) return;
         Flavors[flavor] = GetFlavor(flavor) + amount;
     }
+
+    /// <summary>
+    /// 将锅状态重置为"未开始"，用于开始新的一锅。
+    /// 清空食材与味道，重置分数、碗数和阶段。
+    /// </summary>
+    public void Reset(int bowlLimit = 10)
+    {
+        BowlNumber = 1;
+        BowlLimit = bowlLimit;
+        Ingredients.Clear();
+        Flavors.Clear();
+        BaseScore = 0;
+        FinalScore = 0;
+        IsScoreLocked = false;
+        Phase = PotPhase.NotStarted;
+        CurrentBowlPhase = BowlPhase.Start;
+    }
 }
