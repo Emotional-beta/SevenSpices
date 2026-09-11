@@ -35,19 +35,43 @@ public partial class Main : Node
         GD.Print($"Final Pot: {_gameState.Run.IsFinalPot}");
         GD.Print($"Phase: {_gameState.Pot.Phase}");
 
-        var rice   = GetNode<Button>("%RiceButton");
-        var sugar  = GetNode<Button>("%SugarButton");
-        var pepper = GetNode<Button>("%PepperButton");
-        var red    = GetNode<Button>("%RedDateButton");
-
-        rice.Pressed   += () => OnIngredientPressed("rice");
-        sugar.Pressed  += () => OnIngredientPressed("sugar");
-        pepper.Pressed += () => OnIngredientPressed("pepper");
-        red.Pressed    += () => OnIngredientPressed("red_date");
-
-        _ingredientButtons = new[] { rice, sugar, pepper, red };
-
+        BuildIngredientUI();
         RefreshUI();
+    }
+
+    private void BuildIngredientUI()
+    {
+        var vbox = GetNode<VBoxContainer>("%VBoxContainer");
+
+        var sep = new HSeparator();
+        sep.CustomMinimumSize = new Vector2(0, 10);
+        vbox.AddChild(sep);
+
+        var title = new Label();
+        title.Text = "投入食材";
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.CustomMinimumSize = new Vector2(0, 28);
+        vbox.AddChild(title);
+
+        var row = new HBoxContainer();
+        row.Alignment = BoxContainer.AlignmentMode.Center;
+        row.AddThemeConstantOverride("separation", 15);
+        vbox.AddChild(row);
+
+        string[] ids = { "rice", "sugar", "pepper", "red_date" };
+        _ingredientButtons = new Button[ids.Length];
+
+        for (int i = 0; i < ids.Length; i++)
+        {
+            string capturedId = ids[i];
+            var def = IngredientData.Registry.Get(capturedId);
+            var btn = new Button();
+            btn.Text = def.Name;
+            btn.CustomMinimumSize = new Vector2(80, 36);
+            row.AddChild(btn);
+            btn.Pressed += () => OnIngredientPressed(capturedId);
+            _ingredientButtons[i] = btn;
+        }
     }
 
     private void OnIngredientPressed(string ingredientId)
@@ -80,16 +104,16 @@ public partial class Main : Node
 
     private static string ToBowlPhaseText(BowlPhase phase) => phase switch
     {
-        BowlPhase.Start            => "开始",
-        BowlPhase.Customer         => "食客出现",
-        BowlPhase.ItemPhase        => "使用道具",
+        BowlPhase.Start => "开始",
+        BowlPhase.Customer => "食客出现",
+        BowlPhase.ItemPhase => "使用道具",
         BowlPhase.IngredientSelection => "选择食材",
-        BowlPhase.IngredientResolve   => "投入食材",
+        BowlPhase.IngredientResolve => "投入食材",
         BowlPhase.ScoreCalculation => "计算分数",
-        BowlPhase.ScoreLocked      => "分数锁定",
-        BowlPhase.Serving          => "呈上料理",
-        BowlPhase.Reward           => "获得奖励",
-        BowlPhase.End              => "本碗结束",
+        BowlPhase.ScoreLocked => "分数锁定",
+        BowlPhase.Serving => "呈上料理",
+        BowlPhase.Reward => "获得奖励",
+        BowlPhase.End => "本碗结束",
         _ => phase.ToString()
     };
 
