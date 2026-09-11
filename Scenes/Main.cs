@@ -14,7 +14,6 @@ public partial class Main : Node
     private PotController _potController = null!;
     private EffectSystem _effectSystem = null!;
     private Button[] _ingredientButtons = null!;
-    private Button _completeBowlButton = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
@@ -122,19 +121,6 @@ public partial class Main : Node
             _ingredientButtons[i] = btn;
         }
 
-        // 完成本碗按钮
-        var sep3 = new HSeparator();
-        sep3.CustomMinimumSize = new Vector2(0, 10);
-        vbox.AddChild(sep3);
-
-        _completeBowlButton = new Button();
-        _completeBowlButton.Text = "完成本碗";
-        _completeBowlButton.CustomMinimumSize = new Vector2(160, 40);
-        _completeBowlButton.Pressed += OnCompleteBowlPressed;
-        var completeBowlRow = new HBoxContainer();
-        completeBowlRow.Alignment = BoxContainer.AlignmentMode.Center;
-        completeBowlRow.AddChild(_completeBowlButton);
-        vbox.AddChild(completeBowlRow);
     }
 
     private static Label MakeLabel(string text, bool center = false, int minHeight = 0)
@@ -155,14 +141,9 @@ public partial class Main : Node
     {
         var instance = IngredientData.CreateInstance(ingredientId);
         _potController.AddIngredient(instance, _effectSystem);
-        RefreshUI();
-    }
 
-    private void OnCompleteBowlPressed()
-    {
+        // 食材投入后自动完成当前碗：从 IngredientResolve 推进到 End
         var pot = _gameState.Pot;
-
-        // 从 IngredientResolve 推进到 End（共 5 步）
         while (pot.CurrentBowlPhase != BowlPhase.End && pot.Phase == PotPhase.InProgress)
             _potController.AdvanceBowlPhase();
 
@@ -193,7 +174,6 @@ public partial class Main : Node
                       && pot.CurrentBowlPhase == BowlPhase.IngredientResolve;
         foreach (var btn in _ingredientButtons)
             btn.Disabled = !canAct;
-        _completeBowlButton.Disabled = !canAct;
     }
 
     private static string ToBowlPhaseText(BowlPhase phase) => phase switch
