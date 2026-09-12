@@ -24,6 +24,9 @@ public partial class Main : Node
     private Label _customerLabel = null!;
     private Label _goldLabel = null!;
     private Label _flavorLabel = null!;
+    private Label _bottomLabel = null!;
+    private Label _runCompleteLabel = null!;
+    private Button _nextPotButton = null!;
     private Button _endCookingButton = null!;
 
     // 动态 tooltip 面板（顶层覆盖，不参与布局，不拦截鼠标）
@@ -107,6 +110,9 @@ public partial class Main : Node
         _flavorLabel = MakeLabel("--", center: true, minHeight: 28);
         vbox.AddChild(_flavorLabel);
 
+        _bottomLabel = MakeLabel("锅底：--", center: true, minHeight: 28);
+        vbox.AddChild(_bottomLabel);
+
         var sep2 = new HSeparator();
         sep2.CustomMinimumSize = new Vector2(0, 10);
         vbox.AddChild(sep2);
@@ -128,12 +134,23 @@ public partial class Main : Node
         _skipBowlButton.Pressed += OnSkipBowlPressed;
         vbox.AddChild(_skipBowlButton);
 
+        // 普通锅结束后的跨锅推进入口
+        _nextPotButton = new Button();
+        _nextPotButton.Text = "进入下一锅";
+        _nextPotButton.CustomMinimumSize = new Vector2(180, 40);
+        _nextPotButton.Pressed += OnNextPotPressed;
+        vbox.AddChild(_nextPotButton);
+
         // 最终锅专用入口：玩家决定「放好」后，整口最终锅一次性结算
         _endCookingButton = new Button();
         _endCookingButton.Text = "结束煮粥（结算最终锅）";
         _endCookingButton.CustomMinimumSize = new Vector2(220, 40);
         _endCookingButton.Pressed += OnEndCookingPressed;
         vbox.AddChild(_endCookingButton);
+
+        _runCompleteLabel = MakeLabel("本局完成", center: true, minHeight: 40);
+        _runCompleteLabel.Visible = false;
+        vbox.AddChild(_runCompleteLabel);
 
         // tooltip 面板挂到顶层覆盖 Control，脱离 vbox 布局流，
         // 设置 MouseFilter.Ignore 彻底不参与鼠标事件，防止闪烁。
@@ -244,12 +261,25 @@ public partial class Main : Node
     }
 
     /// <summary>
+    /// 普通锅结束后的跨锅推进入口：进入下一锅（或最终锅）并启动。
+    /// 只能由 GameController.CanAdvanceToNextPot 判定为真时可用。
+    /// </summary>
+    private void OnNextPotPressed()
+    {
+        if (!_controller.CanAdvanceToNextPot)
+            return;
+
+        _controller.AdvanceToNextPot();
+        RefreshUI();
+    }
+
+    /// <summary>
     /// 最终锅结算入口：玩家决定放好后，整口最终锅作为「分数 ×32 的一大碗粥」一次性结算。
     /// 分数由 RunController.EndCooking 内部按 ×32 计算并锁定。
     /// </summary>
     private void OnEndCookingPressed()
     {
-        if (!_controller.IsFinalPot || _controller.Pot.Phase != PotPhase.InProgress)
+        if (!_controller.CanEndCooking)
             return;
 
         _controller.EndCooking();
@@ -287,13 +317,17 @@ public partial class Main : Node
         _goldLabel.Text = $"金币：{_controller.Player.Gold}";
 
         _flavorLabel.Text = ToFlavorText(pot);
+        _bottomLabel.Text = $"锅底：{ToBottomText(_controller.State.Bottom)}";
 
         _poolCountLabel.Text = $"剩余食材池：{_controller.RemainingPoolCount}";
 
         RebuildCandidateButtons();
 
-        _skipBowlButton.Disabled = !_controller.CanSkipBowl;
-        _endCookingButton.Disabled = !(_controller.IsFinalPot && pot.Phase == PotPhase.InProgress);
+        bool runComplete = _controller.IsRunComplete;
+        _skipBowlButton.Disabled = runComplete || !_controller.CanSkipBowl;
+        _nextPotButton.Disabled = runComplete || !_controller.CanAdvanceToNextPot;
+        _endCookingButton.Disabled = runComplete || !_controller.CanEndCooking;
+        _runCompleteLabel.Visible = runComplete;
     }
 
     /// <summary>
@@ -352,6 +386,20 @@ public partial class Main : Node
             ("苦", FlavorType.Bitter),
         ];
         var parts = System.Array.ConvertAll(flavors, f => $"{f.label} {pot.GetFlavor(f.type)}");
+        return string.Join("   ", parts);
+    }
+
+    private static string ToBottomText(BottomState bottom)
+    {
+        (string label, FlavorType type)[] flavors =
+        [
+            ("鲜", FlavorType.Umami),
+            ("甜", FlavorType.Sweet),
+            ("辣", FlavorType.Spicy),
+            ("酸", FlavorType.Sour),
+            ("苦", FlavorType.Bitter),
+        ];
+        var parts = System.Array.ConvertAll(flavors, f => $"{f.label}{bottom.GetFlavor(f.type)}");
         return string.Join("   ", parts);
     }
 

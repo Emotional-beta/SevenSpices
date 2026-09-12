@@ -55,6 +55,23 @@ public class GameController
     /// <summary>当前是否处于最终锅。</summary>
     public bool IsFinalPot => _state.Run.IsFinalPot;
 
+    /// <summary>
+    /// 是否允许推进到下一锅：当前锅已 Ended 且不是最终锅。
+    /// 最终锅只能通过 <see cref="EndCooking"/> 结束整局，不能推进。
+    /// </summary>
+    public bool CanAdvanceToNextPot =>
+        _state.Pot.Phase == PotPhase.Ended && !_state.Run.IsFinalPot;
+
+    /// <summary>整局是否已完成：最终锅已结束。委托领域层，语义等价。最终锅结算前恒为 false。</summary>
+    public bool IsRunComplete => _runController.IsRunComplete;
+
+    /// <summary>
+    /// 当前是否允许结束煮粥：处于最终锅且锅正在（InProgress）。
+    /// 集中此判定，供表现层按钮守卫与禁用态统一使用。
+    /// </summary>
+    public bool CanEndCooking =>
+        _state.Run.IsFinalPot && _state.Pot.Phase == PotPhase.InProgress;
+
     /// <summary>当前抽屉中的候选食材实例（最多 3 个，池不足则有几个抽几个）。</summary>
     public IReadOnlyList<IngredientInstance> CurrentCandidates => _candidates;
 
@@ -119,10 +136,14 @@ public class GameController
 
     /// <summary>
     /// 当前锅结束后推进到下一锅（或最终锅），并立即启动该锅。
-    /// 要求当前锅已 Ended（由 <see cref="RunController.AdvanceToNextPot"/> 校验）。
+    /// 要求 <see cref="CanAdvanceToNextPot"/> 为真；锅底提炼已在锅结束时完成，此处不重复提炼。
     /// </summary>
     public void AdvanceToNextPot()
     {
+        if (!CanAdvanceToNextPot)
+            throw new InvalidOperationException(
+                $"Cannot advance to next pot: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}.");
+
         _runController.AdvanceToNextPot();
         StartCurrentPot();
     }
@@ -233,8 +254,10 @@ public class GameController
         }
         else
         {
-            // 锅结束：本锅池作废，篮不变。
+            // 锅结束：提炼锅底（恰好一次），本锅池与候选一并作废，篮不变。
+            potController.ClosePot();
             _pool = null;
+            _candidates.Clear();
         }
     }
 

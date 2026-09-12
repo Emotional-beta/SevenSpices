@@ -24,6 +24,7 @@ public static class TestRunner
         GameStateTests.RunAll();
         GameControllerTests.RunAll();
         CustomerFlowTests.RunAll();
+        RunProgressionTests.RunAll();
         EffectSystemTests.RunAll();
         PotControllerTests.RunAll();
         PotLifecycleTests.RunAll();
