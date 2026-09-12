@@ -21,6 +21,8 @@ public partial class Main : Node
     private Label _multiplierLabel = null!;
     private Label _finalScoreLabel = null!;
     private Label _totalScoreLabel = null!;
+    private Label _customerLabel = null!;
+    private Label _goldLabel = null!;
     private Label _flavorLabel = null!;
     private Button _endCookingButton = null!;
 
@@ -92,6 +94,10 @@ public partial class Main : Node
         vbox.AddChild(_finalScoreLabel);
         _totalScoreLabel = MakeLabel("本锅累计基础分：0", center: true, minHeight: 28);
         vbox.AddChild(_totalScoreLabel);
+        _customerLabel = MakeLabel("当前食客：--", center: true, minHeight: 28);
+        vbox.AddChild(_customerLabel);
+        _goldLabel = MakeLabel("金币：0", center: true, minHeight: 28);
+        vbox.AddChild(_goldLabel);
 
         var sep1 = new HSeparator();
         sep1.CustomMinimumSize = new Vector2(0, 10);
@@ -271,6 +277,15 @@ public partial class Main : Node
                 ? "最终分数：（点「结束煮粥」结算）"
                 : "最终分数：（待结算）";
         _totalScoreLabel.Text = $"本锅累计基础分：{pot.TotalBaseScore}";
+
+        var customer = _controller.CurrentCustomer;
+        _customerLabel.Text = customer == null
+            ? "当前食客：--"
+            : customer.Definition.IsRare
+                ? $"当前食客：{customer.Definition.Name}（稀有）"
+                : $"当前食客：{customer.Definition.Name}";
+        _goldLabel.Text = $"金币：{_controller.Player.Gold}";
+
         _flavorLabel.Text = ToFlavorText(pot);
 
         _poolCountLabel.Text = $"剩余食材池：{_controller.RemainingPoolCount}";

@@ -133,6 +133,19 @@ public static class IngredientData
         new(Registry.Get(ingredientId));
 
     /// <summary>
+    /// 从正式 Registry 的全部食材中随机取一个 Definition 创建实例。
+    /// 用于稀有食客满意时的随机食材掉落。
+    /// </summary>
+    public static IngredientInstance CreateRandomInstance(Random random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+
+        var all = Registry.GetAll();
+        var definition = all[random.Next(all.Count)];
+        return new IngredientInstance(definition);
+    }
+
+    /// <summary>
     /// 创建初始食材篮：5 个米饭 + 1 个职业特殊食材。
     /// 职业系统未实现，暂用 1 个辣椒占位。
     /// </summary>

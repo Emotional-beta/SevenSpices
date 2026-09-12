@@ -1,4 +1,5 @@
 using SevenSpices.Core.Content;
+using SevenSpices.Core.Customers;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Pot;
@@ -20,16 +21,25 @@ public class GameController
     private readonly GameState _state;
     private readonly RunController _runController;
     private readonly EffectSystem _effectSystem;
+    private readonly CustomerAppearanceConfig _appearance;
+    private readonly Random _random;
     private PotController? _potController;
     private IngredientPool? _pool;
     private readonly List<IngredientInstance> _candidates = new();
 
     /// <param name="state">可注入已有 GameState（测试 / 存档恢复用）；为空则新建。</param>
-    public GameController(GameState? state = null)
+    /// <param name="appearance">食客出现机制配置；为空则使用默认配置。</param>
+    /// <param name="random">随机源（食客出现、稀有掉落）；为空则使用 <see cref="Random.Shared"/>。</param>
+    public GameController(
+        GameState? state = null,
+        CustomerAppearanceConfig? appearance = null,
+        Random? random = null)
     {
         _state = state ?? new GameState();
         _runController = new RunController(_state);
         _effectSystem = new EffectSystem();
+        _appearance = appearance ?? new CustomerAppearanceConfig();
+        _random = random ?? Random.Shared;
     }
 
     /// <summary>游戏运行状态根。</summary>
@@ -38,6 +48,9 @@ public class GameController
     public RunState Run => _state.Run;
     public PotState Pot => _state.Pot;
     public PlayerState Player => _state.Player;
+
+    /// <summary>当前碗的食客实例（null 表示尚未指派或已结算）。只读。</summary>
+    public CustomerInstance? CurrentCustomer => _state.Customer.CurrentCustomer;
 
     /// <summary>当前是否处于最终锅。</summary>
     public bool IsFinalPot => _state.Run.IsFinalPot;
@@ -86,11 +99,18 @@ public class GameController
     /// </summary>
     public void StartCurrentPot()
     {
+        // 食客状态按「本锅」语义重置：必须在建池 / 指派食客之前。
+        _state.Customer.ResetForPot();
+
         _potController = _runController.StartCurrentPot();
         _potController.StartBowl();
 
-        _pool = new IngredientPool(_state.Player.IngredientBasket);
+        _pool = new IngredientPool(_state.Player.IngredientBasket, _random);
         _candidates.Clear();
+
+        // 最终锅不逐碗指派食客：整锅由 EndCooking 用占位食客一次性结算。
+        if (!_state.Run.IsFinalPot)
+            AssignCustomerForBowl();
 
         AdvanceToIngredientSelection(_potController);
 
@@ -198,12 +218,16 @@ public class GameController
         {
             if (_state.Pot.CurrentBowlPhase == BowlPhase.ScoreCalculation)
                 potController.CalculateScore();
+            else if (_state.Pot.CurrentBowlPhase == BowlPhase.Serving)
+                ServeCurrentCustomer();
+
             potController.AdvanceBowlPhase();
         }
 
         if (_state.Pot.Phase == PotPhase.InProgress)
         {
             potController.StartNextBowl();
+            AssignCustomerForBowl();
             AdvanceToIngredientSelection(potController);
             DrawCandidates();
         }
@@ -212,6 +236,40 @@ public class GameController
             // 锅结束：本锅池作废，篮不变。
             _pool = null;
         }
+    }
+
+    /// <summary>
+    /// 按当前碗号为该碗指派食客（普通/稀有由 <see cref="CustomerAppearanceConfig"/> 决定）。
+    /// 只在普通锅的每碗开始时调用。
+    /// </summary>
+    private void AssignCustomerForBowl()
+    {
+        var customer = _appearance.CreateCustomerForBowl(_state.Pot.BowlNumber, _random);
+        CustomerService.AssignCustomer(_state.Customer, customer);
+    }
+
+    /// <summary>
+    /// 食客喝粥并结算奖励。必须在分数锁定后（Serving 阶段）调用，
+    /// 保证满意度读到的是已锁定的 FinalScore。
+    /// 普通食客发放基础金币；稀有食客满意时掉落一个随机食材（见 CustomerService）。
+    /// </summary>
+    private void ServeCurrentCustomer()
+    {
+        var customer = _state.Customer.CurrentCustomer;
+        if (customer == null)
+            return;
+
+        IngredientInstance? rewardIngredient = customer.Definition.IsRare
+            ? IngredientData.CreateRandomInstance(_random)
+            : null;
+
+        CustomerService.EvaluateAndReward(
+            _state.Customer,
+            _state.Pot,
+            _state.Player,
+            _appearance.BaseGoldReward,
+            rewardIngredient,
+            null);
     }
 
     private void DrawCandidates()
