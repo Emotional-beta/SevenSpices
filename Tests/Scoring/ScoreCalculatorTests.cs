@@ -27,6 +27,7 @@ public static class ScoreCalculatorTests
         Test_CalculateAndLock_Bowl7_BaseScore100();
         Test_CalculateAndLock_Bowl10_BaseScore100();
         Test_CalculateAndLock_Bowl11_BaseScore100();
+        Test_FinalPotBowlNumber_Is32Tier();
         Test_CalculateAndLock_BaseScore0();
         Test_CalculateAndLock_SetsIsScoreLocked();
         Test_CalculateAndLock_DoesNotModifyBaseScore();
@@ -71,22 +72,22 @@ public static class ScoreCalculatorTests
     static void Test_GetMultiplier_Bowl10() =>
         Assert(ScoreCalculator.GetMultiplier(10) == 32, "Bowl 10 must be ×32");
 
-    // --- GetMultiplier: 最终锅超过 10 碗 ---
+    // --- GetMultiplier: 超出十碗倍率表仍取最高档 ---
 
     static void Test_GetMultiplier_Bowl11() =>
-        Assert(ScoreCalculator.GetMultiplier(11) == 32, "Bowl 11 must be ×32 (final pot)");
+        Assert(ScoreCalculator.GetMultiplier(11) == 32, "Bowl 11 must be ×32 (beyond table → highest tier)");
 
     static void Test_GetMultiplier_Bowl12() =>
-        Assert(ScoreCalculator.GetMultiplier(12) == 32, "Bowl 12 must be ×32 (final pot)");
+        Assert(ScoreCalculator.GetMultiplier(12) == 32, "Bowl 12 must be ×32 (beyond table → highest tier)");
 
     static void Test_GetMultiplier_Bowl20() =>
-        Assert(ScoreCalculator.GetMultiplier(20) == 32, "Bowl 20 must be ×32 (final pot)");
+        Assert(ScoreCalculator.GetMultiplier(20) == 32, "Bowl 20 must be ×32 (beyond table → highest tier)");
 
     static void Test_GetMultiplier_Bowl100() =>
-        Assert(ScoreCalculator.GetMultiplier(100) == 32, "Bowl 100 must be ×32 (final pot)");
+        Assert(ScoreCalculator.GetMultiplier(100) == 32, "Bowl 100 must be ×32 (beyond table → highest tier)");
 
     static void Test_GetMultiplier_BowlMaxValue() =>
-        Assert(ScoreCalculator.GetMultiplier(int.MaxValue) == 32, "int.MaxValue bowl must be ×32 (final pot)");
+        Assert(ScoreCalculator.GetMultiplier(int.MaxValue) == 32, "int.MaxValue bowl must be ×32 (highest tier)");
 
     // --- GetMultiplier: 非法碗数 ---
 
@@ -130,7 +131,15 @@ public static class ScoreCalculatorTests
     {
         var pot = MakePot(11, 100);
         ScoreCalculator.CalculateAndLock(pot);
-        Assert(pot.FinalScore == 3200, "Bowl 11, BaseScore 100 → FinalScore must be 3200 (final pot uses ×32)");
+        Assert(pot.FinalScore == 3200, "Bowl 11, BaseScore 100 → FinalScore must be 3200 (highest tier)");
+    }
+
+    // --- 最终锅固定档位 ---
+
+    static void Test_FinalPotBowlNumber_Is32Tier()
+    {
+        Assert(ScoreCalculator.GetMultiplier(ScoreCalculator.FinalPotBowlNumber) == 32,
+            "FinalPotBowlNumber 必须落在 ×32 档位");
     }
 
     static void Test_CalculateAndLock_BaseScore0()

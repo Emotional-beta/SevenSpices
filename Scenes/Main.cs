@@ -5,6 +5,7 @@ using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
+using SevenSpices.Core.Scoring;
 
 namespace SevenSpices;
 
@@ -22,8 +23,11 @@ public partial class Main : Node
     private Label _phaseLabel = null!;
     private Label _bowlLabel = null!;
     private Label _scoreLabel = null!;
+    private Label _multiplierLabel = null!;
+    private Label _finalScoreLabel = null!;
     private Label _totalScoreLabel = null!;
     private Label _flavorLabel = null!;
+    private Button _endCookingButton = null!;
 
     // 动态 tooltip 面板（顶层覆盖，不参与布局，不拦截鼠标）
     private PanelContainer _tooltipPanel = null!;
@@ -96,6 +100,10 @@ public partial class Main : Node
         vbox.AddChild(_bowlLabel);
         _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 28);
         vbox.AddChild(_scoreLabel);
+        _multiplierLabel = MakeLabel("倍率：×1", center: true, minHeight: 28);
+        vbox.AddChild(_multiplierLabel);
+        _finalScoreLabel = MakeLabel("最终分数：0", center: true, minHeight: 28);
+        vbox.AddChild(_finalScoreLabel);
         _totalScoreLabel = MakeLabel("本锅累计基础分：0", center: true, minHeight: 28);
         vbox.AddChild(_totalScoreLabel);
 
@@ -134,6 +142,13 @@ public partial class Main : Node
             btnRow.AddChild(btn);
             _ingredientButtons[i] = btn;
         }
+
+        // 最终锅专用入口：玩家决定「放好」后，整口最终锅一次性结算
+        _endCookingButton = new Button();
+        _endCookingButton.Text = "结束煮粥（结算最终锅）";
+        _endCookingButton.CustomMinimumSize = new Vector2(220, 40);
+        _endCookingButton.Pressed += OnEndCookingPressed;
+        vbox.AddChild(_endCookingButton);
 
         // tooltip 面板挂到顶层覆盖 Control，脱离 vbox 布局流，
         // 设置 MouseFilter.Ignore 彻底不参与鼠标事件，防止闪烁。
@@ -234,19 +249,43 @@ public partial class Main : Node
         var instance = IngredientData.CreateInstance(ingredientId);
         _potController.AddIngredient(instance, _effectSystem);
 
-        // 食材投入后自动完成当前碗：从 IngredientResolve 推进到 End
         var pot = _gameState.Pot;
-        while (pot.CurrentBowlPhase != BowlPhase.End && pot.Phase == PotPhase.InProgress)
-            _potController.AdvanceBowlPhase();
 
-        // 未达上限则开始下一碗，并推进到 IngredientResolve
-        if (pot.Phase == PotPhase.InProgress)
+        // 最终锅不逐碗结算：整锅持续累积，等玩家点「结束煮粥」后一次性结算
+        if (!_gameState.Run.IsFinalPot)
         {
-            _potController.StartNextBowl();
-            for (int i = 0; i < 4; i++)
+            // 食材投入后自动完成当前碗：从 IngredientResolve 推进到 End
+            // ScoreCalculation 阶段需先调用 CalculateScore() 再推进
+            while (pot.CurrentBowlPhase != BowlPhase.End && pot.Phase == PotPhase.InProgress)
+            {
+                if (pot.CurrentBowlPhase == BowlPhase.ScoreCalculation)
+                    _potController.CalculateScore();
                 _potController.AdvanceBowlPhase();
+            }
+
+            // 未达上限则开始下一碗，并推进到 IngredientResolve
+            if (pot.Phase == PotPhase.InProgress)
+            {
+                _potController.StartNextBowl();
+                for (int i = 0; i < 4; i++)
+                    _potController.AdvanceBowlPhase();
+            }
         }
 
+        RefreshUI();
+    }
+
+    /// <summary>
+    /// 最终锅结算入口：玩家决定放好后，整口最终锅作为「分数 ×32 的一大碗粥」一次性结算。
+    /// 分数由 RunController.EndCooking 内部按 ×32 计算并锁定。
+    /// </summary>
+    private void OnEndCookingPressed()
+    {
+        if (!_gameState.Run.IsFinalPot || _gameState.Pot.Phase != PotPhase.InProgress)
+            return;
+
+        // 最终锅的食客（饕餮）与奖励规则尚未接入内容层，暂用正式普通食客数据占位
+        _runController.EndCooking(CustomerData.CreateNormalInstance());
         RefreshUI();
     }
 
@@ -256,10 +295,20 @@ public partial class Main : Node
         var pot = _gameState.Pot;
 
         _chapterLabel.Text = $"第 {run.Chapter} 章";
-        _potLabel.Text = $"第 {run.PotIndex} 锅";
+        _potLabel.Text = run.IsFinalPot ? "最终锅" : $"第 {run.PotIndex} 锅";
         _phaseLabel.Text = $"阶段：{ToBowlPhaseText(pot.CurrentBowlPhase)}";
-        _bowlLabel.Text = $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
+        // 最终锅不按碗推进（BowlNumber 固定为 ×32 档位），显示碗数会误导玩家
+        _bowlLabel.Text = run.IsFinalPot
+            ? "最终锅：可无限添加食材"
+            : $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
         _scoreLabel.Text = $"基础分：{pot.BaseScore}";
+        int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
+        _multiplierLabel.Text = $"倍率：×{multiplier}";
+        _finalScoreLabel.Text = pot.IsScoreLocked
+            ? $"最终分数：{pot.FinalScore}"
+            : run.IsFinalPot
+                ? "最终分数：（点「结束煮粥」结算）"
+                : "最终分数：（待结算）";
         _totalScoreLabel.Text = $"本锅累计基础分：{pot.TotalBaseScore}";
         _flavorLabel.Text = ToFlavorText(pot);
 
@@ -267,6 +316,8 @@ public partial class Main : Node
                       && pot.CurrentBowlPhase == BowlPhase.IngredientResolve;
         foreach (var btn in _ingredientButtons)
             btn.Disabled = !canAct;
+
+        _endCookingButton.Disabled = !(run.IsFinalPot && pot.Phase == PotPhase.InProgress);
     }
 
     private static string ToBowlPhaseText(BowlPhase phase) => phase switch

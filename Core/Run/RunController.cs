@@ -3,6 +3,7 @@ using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
+using SevenSpices.Core.Scoring;
 
 namespace SevenSpices.Core.Run;
 
@@ -103,7 +104,7 @@ public class RunController
     /// <summary>
     /// 最终锅结算入口：玩家主动结束煮粥，触发食客评价、奖励派发、锅底提炼。
     /// 只能在 IsFinalPot == true 且锅仍在进行中（PotPhase.InProgress）时调用。
-    /// 重复调用会因 EndPot 的前置检查而抛出异常，天然防止奖励重复发放。
+    /// 重复调用会因锅的阶段检查而抛出异常，天然防止奖励重复发放。
     /// </summary>
     /// <param name="customer">本次结算的食客实例。</param>
     /// <param name="baseGoldReward">普通食客喝粥后的基础金币奖励。</param>
@@ -121,7 +122,17 @@ public class RunController
             throw new InvalidOperationException(
                 "EndCooking can only be called during Final Pot.");
 
-        // EndPot 检查 Phase == InProgress，若已 Ended 则抛异常，防止重复结算
+        var pot = _gameState.Pot;
+        if (pot.Phase != PotPhase.InProgress)
+            throw new InvalidOperationException(
+                $"Cannot end cooking: pot phase is {pot.Phase}, expected InProgress.");
+
+        // 最终锅整锅一次性结算：先按 ×32 计算并锁定最终分数，再结束锅。
+        // 顺序很重要：分数若已被锁定，CalculateAndLock 会抛异常，此时必须零副作用，
+        // 否则会留下「锅已 Ended 但奖励未发」且无法重试的死局。
+        // 同时 SatisfactionEvaluator 读的就是 FinalScore，算分必须发生在 EvaluateAndReward 之前。
+        ScoreCalculator.CalculateAndLock(pot);
+
         var ctrl = new PotController(_gameState);
         ctrl.EndPot();
 

@@ -1,6 +1,7 @@
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
+using SevenSpices.Core.Scoring;
 
 namespace SevenSpices.Tests.Run;
 
@@ -29,6 +30,9 @@ public static class RunControllerTests
         // 多锅连续推进
         Test_MultiPot_AllNinePotsAdvanceCorrectly();
         Test_MultiPot_StateConsistency();
+
+        // 锅底跨锅滚雪球（设计文档 §14 / §12.2）
+        Test_Bottom_SnowballsAcrossPots();
 
         // Final Pot
         Test_AfterAllNormalPots_IsFinalPotIsTrue();
@@ -274,6 +278,40 @@ public static class RunControllerTests
             "第二锅启动后 BowlNumber 应为 1（已 Reset）");
     }
 
+    // ── 锅底跨锅滚雪球 ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 设计文档 §14 滚雪球：第1锅 20甜 → 锅底 6；第2锅 6+20=26 → 提炼 7。
+    /// 同时验证 PotState.Reset + BottomState.ApplyToPot 不会丢掉或重复衰减锅底。
+    /// </summary>
+    static void Test_Bottom_SnowballsAcrossPots()
+    {
+        var state = new GameState();
+        var run = new RunController(state);
+        run.StartRun();
+
+        // 第 1 锅
+        var ctrl1 = run.StartCurrentPot();
+        state.Pot.AddFlavor(FlavorType.Sweet, 20);
+        RunPotToEnd(ctrl1);
+        ctrl1.ClosePot();
+        Assert(state.Bottom.GetFlavor(FlavorType.Sweet) == 6, "第1锅 20甜 → 锅底 6");
+
+        run.AdvanceToNextPot();
+
+        // 第 2 锅：开锅即注入旧锅底 6
+        var ctrl2 = run.StartCurrentPot();
+        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 6,
+            "第2锅开锅应直接注入锅底 6 甜（不再次乘 30%）");
+
+        state.Pot.AddFlavor(FlavorType.Sweet, 20);
+        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 26, "第2锅最终应为 26 甜");
+
+        RunPotToEnd(ctrl2);
+        ctrl2.ClosePot();
+        Assert(state.Bottom.GetFlavor(FlavorType.Sweet) == 7, "26 × 30% = 7.8 → 锅底 7");
+    }
+
     // ── Final Pot ─────────────────────────────────────────────────────────────
 
     static void Test_AfterAllNormalPots_IsFinalPotIsTrue()
@@ -340,15 +378,14 @@ public static class RunControllerTests
 
         var ctrl = run.StartCurrentPot();
         Assert(!run.IsRunComplete, "最终锅进行中时 IsRunComplete 应为 false");
+        Assert(state.Pot.BowlNumber == ScoreCalculator.FinalPotBowlNumber,
+            "最终锅 BowlNumber 应固定为 ×32 档位");
 
-        // 走几碗后通过 EndPot 结束最终锅
+        // 最终锅不逐碗结算：走完一碗后主动结束最终锅
         ctrl.StartBowl();
         for (int s = 0; s < 9; s++) ctrl.AdvanceBowlPhase();
-        ctrl.StartNextBowl();
-        ctrl.StartBowl();
-        for (int s = 0; s < 9; s++) ctrl.AdvanceBowlPhase();
-        ctrl.StartNextBowl();
-        // 主动结束最终锅
+        Assert(state.Pot.Phase == PotPhase.InProgress,
+            "最终锅走到碗末后仍应保持 InProgress");
         ctrl.EndPot();
         ctrl.ClosePot();
 

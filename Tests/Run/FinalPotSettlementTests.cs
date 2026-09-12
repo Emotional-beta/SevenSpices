@@ -1,9 +1,12 @@
+using SevenSpices.Core.Content;
 using SevenSpices.Core.Customers;
+using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
+using SevenSpices.Core.Scoring;
 
 namespace SevenSpices.Tests.Run;
 
@@ -27,6 +30,12 @@ public static class FinalPotSettlementTests
         Test_EndCooking_RunIsComplete();
         Test_EndCooking_CalledTwice_Throws();
         Test_EndCooking_AdvanceToNextPot_StillBlocked();
+        Test_FinalPot_Multiplier_Is32();
+        Test_FinalPot_EffectMultiplier_StacksOn32();
+        Test_FinalPot_RealIngredients_AccumulateThenSettleAt32();
+        Test_FinalPot_BaseScore_AccumulatesAcrossStartBowl();
+        Test_FinalPot_StartNextBowl_Throws();
+        Test_FinalPot_EndCooking_WhenScoreAlreadyLocked_LeavesPotInProgress();
 
         Console.WriteLine("All FinalPotSettlementTests passed.");
     }
@@ -61,15 +70,11 @@ public static class FinalPotSettlementTests
         }
     }
 
-    /// <summary>在最终锅中走几碗但不结束。</summary>
-    static void RunFewBowlsInFinalPot(PotController ctrl, int bowls)
+    /// <summary>在最终锅中开一碗并推进到 IngredientResolve（模拟持续投入食材，不结算）。</summary>
+    static void StartFinalPotBowl(PotController ctrl)
     {
-        for (int bowl = 0; bowl < bowls; bowl++)
-        {
-            ctrl.StartBowl();
-            for (int s = 0; s < 9; s++) ctrl.AdvanceBowlPhase();
-            ctrl.StartNextBowl();
-        }
+        ctrl.StartBowl();
+        for (int s = 0; s < 4; s++) ctrl.AdvanceBowlPhase(); // → IngredientResolve
     }
 
     static CustomerInstance MakeNormalCustomer() =>
@@ -91,8 +96,10 @@ public static class FinalPotSettlementTests
         var run = MakeRunAtFinalPot(state);
         var ctrl = run.StartCurrentPot();
 
-        // 走3碗，不调用 EndCooking
-        RunFewBowlsInFinalPot(ctrl, 3);
+        // 持续投入食材，不调用 EndCooking
+        StartFinalPotBowl(ctrl);
+        state.Pot.AddFlavor(FlavorType.Sweet, 10);
+        state.Pot.BaseScore = 50;
 
         Assert(state.Player.Gold == 0, "最终锅投入食材期间玩家金币不应增加");
         Assert(state.Customer.CurrentCustomer == null,
@@ -164,8 +171,10 @@ public static class FinalPotSettlementTests
         var run = MakeRunAtFinalPot(state);
         run.StartCurrentPot();
 
-        // 让 FinalScore 满足稀有食客条件（threshold=10）
-        state.Pot.FinalScore = 20;
+        // 让 BaseScore 满足稀有食客条件（threshold=10）。
+        // 最终锅不再手工写 FinalScore：EndCooking 会按 BaseScore × 32 计算并锁定，
+        // 1 × 32 = 32 ≥ 10 → 满意。这同时验证了「结算前自动算分」的缺口已修复。
+        state.Pot.BaseScore = 1;
 
         var rewardIngr = new IngredientInstance(
             new IngredientDefinition("chili", "辣椒", IngredientRarity.Uncommon, 8));
@@ -185,9 +194,7 @@ public static class FinalPotSettlementTests
         var run = MakeRunAtFinalPot(state);
         run.StartCurrentPot();
 
-        // FinalScore=0 < threshold=10 → 不满意
-        state.Pot.FinalScore = 0;
-
+        // BaseScore 保持 0 → EndCooking 算出 FinalScore = 0 × 32 = 0 < threshold=10 → 不满意
         var rewardIngr = new IngredientInstance(
             new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5));
         var rewardItem = new ItemInstance(new ItemDefinition("sauce", "酱料"));
@@ -239,7 +246,7 @@ public static class FinalPotSettlementTests
 
         Assert(!run.IsRunComplete, "EndCooking 前 IsRunComplete 应为 false");
 
-        RunFewBowlsInFinalPot(ctrl, 2);
+        StartFinalPotBowl(ctrl);
         run.EndCooking(MakeNormalCustomer(), baseGoldReward: 3);
 
         Assert(run.IsRunComplete, "EndCooking 后 IsRunComplete 应为 true");
@@ -277,6 +284,122 @@ public static class FinalPotSettlementTests
         catch (InvalidOperationException) { threw = true; }
 
         Assert(threw, "最终锅结算后 AdvanceToNextPot 仍应抛 InvalidOperationException");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 最终锅一次性结算：固定 ×32、分数跨碗累积、禁止进入下一碗
+
+    /// <summary>最终锅结算倍率固定为 ×32。</summary>
+    static void Test_FinalPot_Multiplier_Is32()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        run.StartCurrentPot();
+
+        state.Pot.BaseScore = 100;
+        run.EndCooking(MakeNormalCustomer());
+
+        Assert(state.Pot.FinalScore == 3200,
+            "最终锅 BaseScore=100 应按 ×32 结算为 3200");
+        Assert(state.Pot.IsScoreLocked, "最终锅结算后分数应已锁定");
+    }
+
+    /// <summary>最终锅的 ×32 之后仍叠加效果倍率（Q2 裁定）。</summary>
+    static void Test_FinalPot_EffectMultiplier_StacksOn32()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        run.StartCurrentPot();
+
+        state.Pot.BaseScore = 100;
+        state.Pot.FinalScoreMultiplier = 1.5; // 冰块等效果写入
+        run.EndCooking(MakeNormalCustomer());
+
+        Assert(state.Pot.FinalScore == 4800,
+            "最终锅 FinalScore 应为 floor(100 × 32 × 1.5) = 4800");
+    }
+
+    /// <summary>真实路径：在最终锅反复投入正式食材，EndCooking 后整锅按 ×32 一次性结算。</summary>
+    static void Test_FinalPot_RealIngredients_AccumulateThenSettleAt32()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        var ctrl = run.StartCurrentPot();
+        var es = new EffectSystem();
+
+        StartFinalPotBowl(ctrl);
+        ctrl.AddIngredient(IngredientData.CreateInstance("rice"), es);   // 基础分 1
+        ctrl.AddIngredient(IngredientData.CreateInstance("sugar"), es);  // 基础分 2
+
+        int accumulated = state.Pot.BaseScore;
+        Assert(accumulated == 3, "米饭+糖应累积 BaseScore=3");
+        Assert(state.Pot.FinalScore == 0, "结算前最终锅不应逐碗锁分，FinalScore 仍为 0");
+
+        run.EndCooking(MakeNormalCustomer());
+
+        Assert(state.Pot.FinalScore == accumulated * 32,
+            $"最终锅应按累积基础分 {accumulated} × 32 一次性结算");
+    }
+
+    /// <summary>最终锅 StartingBowl 不再清零 BaseScore，整锅分数累积成「一大碗」。</summary>
+    static void Test_FinalPot_BaseScore_AccumulatesAcrossStartBowl()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        var ctrl = run.StartCurrentPot();
+
+        ctrl.StartBowl();
+        state.Pot.BaseScore = 7;
+        state.Pot.FinalScore = 99;
+        ctrl.StartBowl(); // 最终锅不应清零
+
+        Assert(state.Pot.BaseScore == 7,
+            "最终锅 StartBowl 不应重置 BaseScore，分数必须跨阶段累积");
+        Assert(state.Pot.FinalScore == 99,
+            "最终锅 StartBowl 不应重置 FinalScore");
+    }
+
+    /// <summary>最终锅禁止进入下一碗。</summary>
+    static void Test_FinalPot_StartNextBowl_Throws()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        var ctrl = run.StartCurrentPot();
+
+        ctrl.StartBowl();
+        for (int s = 0; s < 9; s++) ctrl.AdvanceBowlPhase(); // → End
+
+        bool threw = false;
+        try { ctrl.StartNextBowl(); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(threw, "最终锅调用 StartNextBowl 应抛 InvalidOperationException");
+        Assert(state.Pot.BowlNumber == ScoreCalculator.FinalPotBowlNumber,
+            "最终锅 BowlNumber 应保持 ×32 档位不变");
+    }
+
+    /// <summary>
+    /// 分数已被锁定时 EndCooking 必须零副作用地失败：锅保持 InProgress（可重试），
+    /// 不能留下「锅已 Ended 但奖励未发」且无法重试的死局。
+    /// </summary>
+    static void Test_FinalPot_EndCooking_WhenScoreAlreadyLocked_LeavesPotInProgress()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        run.StartCurrentPot();
+
+        state.Pot.BaseScore = 10;
+        ScoreCalculator.CalculateAndLock(state.Pot); // 模拟提前锁分
+
+        bool threw = false;
+        try { run.EndCooking(MakeNormalCustomer(), baseGoldReward: 5); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(threw, "分数已锁定时 EndCooking 应抛 InvalidOperationException");
+        Assert(state.Pot.Phase == PotPhase.InProgress,
+            "结算失败时锅必须保持 InProgress，不得留下半结算状态");
+        Assert(state.Player.Gold == 0, "结算失败时不应发放奖励");
+        Assert(state.Customer.CurrentCustomer == null, "结算失败时不应指派食客");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

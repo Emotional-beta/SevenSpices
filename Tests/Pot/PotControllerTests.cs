@@ -4,6 +4,8 @@ using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
+using SevenSpices.Core.Run;
+using SevenSpices.Core.Scoring;
 using SevenSpices.Tests.Effects;
 
 namespace SevenSpices.Tests.Pot;
@@ -25,8 +27,10 @@ public static class PotControllerTests
         Test_NormalPot_CannotStartEleventhBowl();
         Test_EndedPot_CannotAdvanceBowlPhase();
         Test_EndedPot_CannotStartBowl();
-        Test_FinalPot_DoesNotEndAfterTenthBowl();
-        Test_FinalPot_CanStartEleventhBowl();
+        Test_FinalPot_BowlNumber_Is32Tier();
+        Test_FinalPot_DoesNotEndAfterBowlEnd();
+        Test_FinalPot_StartNextBowl_Throws();
+        Test_FinalPot_StartBowl_DoesNotResetBaseScore();
         Test_StartPot_CannotBeCalledTwice();
         Test_AdvanceBowlPhase_ThrowsWhenAtEnd();
         Test_UseItem_OutsideItemPhase_Throws();
@@ -246,48 +250,90 @@ public static class PotControllerTests
         Assert(threw, "StartBowl on an Ended pot should throw InvalidOperationException");
     }
 
-    static void Test_FinalPot_DoesNotEndAfterTenthBowl()
+    // ── 最终锅：不逐碗结算，固定 ×32 档位 ─────────────────────────────────────
+
+    /// <summary>推进 Run 经过全部9锅普通锅，返回处于最终锅状态的 RunController。</summary>
+    static RunController MakeRunAtFinalPot(GameState state)
     {
-        var state = new GameState();
-        // 最终锅：BowlLimit 设为极大值
-        state.Pot.BowlLimit = int.MaxValue;
-
-        var controller = new PotController(state);
-        controller.StartPot();
-
-        // 走完10碗
-        for (int i = 1; i <= 9; i++)
+        var run = new RunController(state);
+        run.StartRun();
+        int total = RunController.ChaptersPerRun * RunController.PotsPerChapter;
+        for (int i = 0; i < total; i++)
         {
-            RunBowlToEnd(controller);
-            controller.StartNextBowl();
+            var ctrl = run.StartCurrentPot();
+            for (int bowl = 1; bowl <= 10; bowl++)
+            {
+                RunBowlToEnd(ctrl);
+                if (bowl < 10) ctrl.StartNextBowl();
+            }
+            ctrl.ClosePot();
+            run.AdvanceToNextPot();
         }
-        RunBowlToEnd(controller); // 第10碗结束
-
-        // 最终锅不应该结束
-        Assert(state.Pot.Phase == PotPhase.InProgress, "Final pot should still be InProgress after bowl 10");
-        Assert(state.Pot.BowlNumber == 10, "BowlNumber should be 10");
+        Assert(state.Run.IsFinalPot, "MakeRunAtFinalPot: 应已进入最终锅");
+        return run;
     }
 
-    static void Test_FinalPot_CanStartEleventhBowl()
+    static void Test_FinalPot_BowlNumber_Is32Tier()
     {
         var state = new GameState();
-        state.Pot.BowlLimit = int.MaxValue;
+        var run = MakeRunAtFinalPot(state);
+        run.StartCurrentPot();
 
-        var controller = new PotController(state);
-        controller.StartPot();
+        Assert(state.Pot.BowlNumber == ScoreCalculator.FinalPotBowlNumber,
+            $"最终锅 BowlNumber 应固定为 {ScoreCalculator.FinalPotBowlNumber}（×32 档）");
+        Assert(ScoreCalculator.GetMultiplier(state.Pot.BowlNumber) == 32,
+            "最终锅固定倍率应为 ×32");
+        Assert(state.Pot.BowlLimit == int.MaxValue,
+            "最终锅 BowlLimit 应保持 int.MaxValue（靠玩家主动结算结束，不靠碗数上限）");
+    }
 
-        for (int i = 1; i <= 9; i++)
-        {
-            RunBowlToEnd(controller);
-            controller.StartNextBowl();
-        }
-        RunBowlToEnd(controller); // 第10碗结束
+    static void Test_FinalPot_DoesNotEndAfterBowlEnd()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        var ctrl = run.StartCurrentPot();
 
-        // 最终锅可以进入第11碗
-        controller.StartNextBowl();
-        Assert(state.Pot.BowlNumber == 11, "Final pot should allow bowl 11");
-        Assert(state.Pot.CurrentBowlPhase == BowlPhase.Start, "Bowl 11 should start at BowlPhase.Start");
-        Assert(state.Pot.Phase == PotPhase.InProgress, "Final pot should still be InProgress at bowl 11");
+        ctrl.StartBowl();
+        AdvanceCurrentBowlToEnd(ctrl);
+
+        Assert(state.Pot.Phase == PotPhase.InProgress,
+            "最终锅走到碗末后仍应保持 InProgress（不自动结束）");
+        Assert(state.Pot.BowlNumber == ScoreCalculator.FinalPotBowlNumber,
+            "最终锅 BowlNumber 不应因碗末推进而改变");
+    }
+
+    static void Test_FinalPot_StartNextBowl_Throws()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        var ctrl = run.StartCurrentPot();
+
+        ctrl.StartBowl();
+        AdvanceCurrentBowlToEnd(ctrl);
+
+        bool threw = false;
+        try { ctrl.StartNextBowl(); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(threw, "最终锅调用 StartNextBowl 应抛 InvalidOperationException");
+    }
+
+    static void Test_FinalPot_StartBowl_DoesNotResetBaseScore()
+    {
+        var state = new GameState();
+        var run = MakeRunAtFinalPot(state);
+        var ctrl = run.StartCurrentPot();
+
+        ctrl.StartBowl();
+        state.Pot.BaseScore = 120;
+        state.Pot.IsScoreLocked = true; // 模拟中途状态，最终锅不应被 StartBowl 清掉
+
+        ctrl.StartBowl();
+
+        Assert(state.Pot.BaseScore == 120,
+            "最终锅 StartBowl 不应重置 BaseScore（整锅一大碗一次性结算）");
+        Assert(state.Pot.IsScoreLocked,
+            "最终锅 StartBowl 不应重置 IsScoreLocked");
     }
 
     static void Test_StartPot_CannotBeCalledTwice()

@@ -225,8 +225,9 @@ public static class FullCoreRunTests
         ctrl.AdvanceBowlPhase(); // → IngredientSelection
         ctrl.AdvanceBowlPhase(); // → IngredientResolve
 
-        // 让 FinalScore 满足稀有食客条件（ScoreAtLeast=20）
-        state.Pot.FinalScore = 20;
+        // 让最终锅结算分数满足稀有食客条件（稀有食客：分数 ≥ 20 或 甜味 ≥ 5）。
+        // 不再手工写 FinalScore —— EndCooking 会按 BaseScore × 32 计算并锁定：1 × 32 = 32 ≥ 20。
+        state.Pot.BaseScore = 1;
 
         run.EndCooking(
             CustomerData.CreateRareInstance(),

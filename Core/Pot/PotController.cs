@@ -24,7 +24,8 @@ public class PotController
     public PotState Pot => _gameState.Pot;
 
     /// <summary>
-    /// 开始一锅：将锅标记为进行中，注入锅底，碗数归 1。
+    /// 开始一锅：将锅标记为进行中，注入锅底。
+    /// 普通锅碗数归 1；最终锅不逐碗结算，固定使用 <see cref="ScoreCalculator.FinalPotBowlNumber"/> 档位（×32）。
     /// 只能在 PotPhase.NotStarted 时调用。
     /// </summary>
     public void StartPot()
@@ -33,13 +34,24 @@ public class PotController
         if (pot.Phase != PotPhase.NotStarted)
             throw new InvalidOperationException($"Cannot start pot: pot phase is already {pot.Phase}.");
 
-        pot.BowlNumber = 1;
+        if (_gameState.Run.IsFinalPot)
+        {
+            // 最终锅不逐碗结算：固定 ×32 档位，且不靠碗数上限结束（只能由 RunController.EndCooking 结束）
+            pot.BowlNumber = ScoreCalculator.FinalPotBowlNumber;
+            pot.BowlLimit = int.MaxValue;
+        }
+        else
+        {
+            pot.BowlNumber = 1;
+        }
+
         pot.Phase = PotPhase.InProgress;
         _gameState.Bottom.ApplyToPot(pot);
     }
 
     /// <summary>
     /// 开始当前碗：重置碗内分数与锁定状态，进入 BowlPhase.Start。
+    /// 最终锅不重置分数 —— 整锅作为一大碗一次性结算，基础分必须跨碗累积。
     /// 只能在 PotPhase.InProgress 时调用。
     /// </summary>
     public void StartBowl()
@@ -48,9 +60,13 @@ public class PotController
         if (pot.Phase != PotPhase.InProgress)
             throw new InvalidOperationException($"Cannot start bowl: pot phase is {pot.Phase}.");
 
-        pot.BaseScore = 0;
-        pot.FinalScore = 0;
-        pot.IsScoreLocked = false;
+        if (!_gameState.Run.IsFinalPot)
+        {
+            pot.BaseScore = 0;
+            pot.FinalScore = 0;
+            pot.IsScoreLocked = false;
+        }
+
         pot.CurrentBowlPhase = BowlPhase.Start;
     }
 
@@ -75,12 +91,16 @@ public class PotController
     /// <summary>
     /// 推进到下一碗：碗数 +1，重置碗状态，进入 BowlPhase.Start。
     /// 要求当前碗已到达 BowlPhase.End 且锅仍处于 InProgress（即未到上限）。
+    /// 最终锅禁止调用：最终锅不逐碗结算，只能通过 RunController.EndCooking() 整锅一次性结算。
     /// </summary>
     public void StartNextBowl()
     {
         var pot = _gameState.Pot;
         if (pot.Phase != PotPhase.InProgress)
             throw new InvalidOperationException($"Cannot start next bowl: pot phase is {pot.Phase}.");
+        if (_gameState.Run.IsFinalPot)
+            throw new InvalidOperationException(
+                "Cannot start next bowl: Final Pot is settled as a single bowl by RunController.EndCooking().");
         if (pot.CurrentBowlPhase != BowlPhase.End)
             throw new InvalidOperationException($"Cannot start next bowl: current bowl phase is {pot.CurrentBowlPhase}.");
 

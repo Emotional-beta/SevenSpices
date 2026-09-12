@@ -2,6 +2,8 @@ using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Pot;
+using SevenSpices.Core.Run;
+using SevenSpices.Core.Scoring;
 using SevenSpices.Tests.Effects;
 
 namespace SevenSpices.Tests.Pot;
@@ -176,35 +178,39 @@ public static class PotLifecycleTests
         Assert(state.Pot.BowlNumber == 10, "BowlNumber 应为 10");
 
         ctrl.ClosePot();
-        // BottomExtractor 对每个 Flavor 取30%，即使值为0也写入（min 1）
-        // 本测试未设置 Flavor，BottomExtractor 以 Flavor 值0走 min 1 路径
-        Assert(state.Bottom.GetFlavor(FlavorType.Sweet) == 1,
-            "ClosePot 后锅底各 Flavor 最低应为 1");
+        // 本测试未设置任何 Flavor：未在本锅出现过的味道不写入锅底，保持 0
+        Assert(state.Bottom.GetFlavor(FlavorType.Sweet) == 0,
+            "本锅未出现的味道不应写入锅底");
     }
 
-    /// <summary>最终锅通过 EndPot() 强制结束后，ClosePot() 应正确提炼锅底。</summary>
+    /// <summary>
+    /// 最终锅：固定 BowlNumber=10（×32 档）、禁止进入下一碗，
+    /// 通过 EndPot() 结束后 ClosePot() 应正确提炼锅底。
+    /// </summary>
     static void Test_FinalPot_EndPot_ThenClosePot()
     {
         var state = new GameState();
-        state.Pot.BowlLimit = int.MaxValue; // 最终锅
-        var ctrl = new PotController(state);
-        ctrl.StartPot();
+        var run = MakeRunAtFinalPot(state);
+        var ctrl = run.StartCurrentPot();
 
-        // 走完11碗
-        for (int i = 1; i <= 10; i++)
-        {
-            RunBowlToEnd(ctrl);
-            ctrl.StartNextBowl();
-        }
-        Assert(state.Pot.Phase == PotPhase.InProgress, "最终锅第11碗应仍为 InProgress");
-        Assert(state.Pot.BowlNumber == 11, "BowlNumber 应为 11");
+        Assert(state.Pot.BowlLimit == int.MaxValue, "最终锅 BowlLimit 应为 int.MaxValue");
+        Assert(state.Pot.BowlNumber == ScoreCalculator.FinalPotBowlNumber,
+            "最终锅 BowlNumber 应固定为 ×32 档位");
 
-        // 主动触发 EndPot（Final Pot 玩家主动结束的入口）
-        ctrl.EndPot();
-        Assert(state.Pot.Phase == PotPhase.Ended, "EndPot 后应为 Ended");
+        ctrl.StartBowl();
+        AdvanceToEnd(ctrl);
+
+        // 最终锅不逐碗结算：即使已到碗末也不允许进入下一碗
+        bool threw = false;
+        try { ctrl.StartNextBowl(); }
+        catch (InvalidOperationException) { threw = true; }
+        Assert(threw, "最终锅调用 StartNextBowl 应抛 InvalidOperationException");
 
         // 设置 Flavor 验证 ClosePot 能正确运行
         state.Pot.AddFlavor(FlavorType.Spicy, 20);
+        ctrl.EndPot();
+        Assert(state.Pot.Phase == PotPhase.Ended, "EndPot 后应为 Ended");
+
         ctrl.ClosePot();
 
         // 30% of 20 = 6
@@ -212,11 +218,32 @@ public static class PotLifecycleTests
             "最终锅 ClosePot 后锅底 Spicy 应为 6（20×30%）");
     }
 
-    /// <summary>ClosePot 不得在已提炼后重复调用（锅已 Ended，ClosePot 本身无状态变更，但可重复提炼，记录此行为）。</summary>
+    /// <summary>推进 Run 经过全部9锅普通锅，返回处于最终锅状态的 RunController。</summary>
+    static RunController MakeRunAtFinalPot(GameState state)
+    {
+        var run = new RunController(state);
+        run.StartRun();
+        int total = RunController.ChaptersPerRun * RunController.PotsPerChapter;
+        for (int i = 0; i < total; i++)
+        {
+            var ctrl = run.StartCurrentPot();
+            for (int bowl = 1; bowl <= 10; bowl++)
+            {
+                RunBowlToEnd(ctrl);
+                if (bowl < 10) ctrl.StartNextBowl();
+            }
+            ctrl.ClosePot();
+            run.AdvanceToNextPot();
+        }
+        Assert(state.Run.IsFinalPot, "MakeRunAtFinalPot: 应已进入最终锅");
+        return run;
+    }
+
+    /// <summary>ClosePot 重复提炼应保持幂等（锅底单调合并，不会因为重复提炼而改变结果）。</summary>
     static void Test_ClosePot_CannotBeCalledTwiceWithoutNewPot()
     {
         // ClosePot 只检查 PotPhase.Ended，调用两次会重复提炼锅底。
-        // 这是当前设计允许的（BottomExtractor 是幂等覆盖写入）。
+        // BottomExtractor 是单调合并写入，且 pot 的 Flavor 不变，因此重复调用结果一致。
         // 此测试验证重复调用不会抛异常，并且结果与最后一次调用一致。
         var state = new GameState();
         var ctrl = new PotController(state);
@@ -237,7 +264,7 @@ public static class PotLifecycleTests
         int secondResult = state.Bottom.GetFlavor(FlavorType.Sour);
 
         Assert(firstResult == secondResult,
-            "ClosePot 是幂等覆盖写入，两次结果应一致");
+            "ClosePot 重复调用结果应一致（单调合并 + pot Flavor 不变）");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

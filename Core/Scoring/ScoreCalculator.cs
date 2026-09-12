@@ -8,6 +8,12 @@ namespace SevenSpices.Core.Scoring;
 public static class ScoreCalculator
 {
     /// <summary>
+    /// 最终锅固定使用的碗数倍率档位。
+    /// 最终锅不逐碗结算，整锅作为「一大碗粥」一次性结算，因此固定取十碗倍率表的最高档 ×32。
+    /// </summary>
+    public const int FinalPotBowlNumber = 10;
+
+    /// <summary>
     /// 根据碗数返回对应倍率。
     /// BowlNumber 1~5 → ×1，6 → ×2，7 → ×4，8 → ×8，9 → ×16，10+ → ×32。
     /// BowlNumber &lt;= 0 视为非法状态，抛出 ArgumentOutOfRangeException。
