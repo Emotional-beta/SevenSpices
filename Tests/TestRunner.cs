@@ -22,6 +22,7 @@ public static class TestRunner
         IngredientDefinitionTests.RunAll();
         IngredientRegistryTests.RunAll();
         GameStateTests.RunAll();
+        GameControllerTests.RunAll();
         EffectSystemTests.RunAll();
         PotControllerTests.RunAll();
         PotLifecycleTests.RunAll();

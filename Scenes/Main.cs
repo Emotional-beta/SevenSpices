@@ -3,18 +3,13 @@ using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
-using SevenSpices.Core.Pot;
-using SevenSpices.Core.Run;
 using SevenSpices.Core.Scoring;
 
 namespace SevenSpices;
 
 public partial class Main : Node
 {
-    private GameState _gameState = null!;
-    private RunController _runController = null!;
-    private PotController _potController = null!;
-    private EffectSystem _effectSystem = null!;
+    private GameController _controller = null!;
     private Button[] _ingredientButtons = null!;
     private string[] _ingredientIds = null!;
 
@@ -37,23 +32,14 @@ public partial class Main : Node
 
     public override void _Ready()
     {
-        _gameState = new GameState();
-        _runController = new RunController(_gameState);
-        _effectSystem = new EffectSystem();
-
-        _runController.StartRun();
-        _potController = _runController.StartCurrentPot();
-
-        // 正式开始第 1 碗，并推进到 IngredientResolve
-        _potController.StartBowl();
-        for (int i = 0; i < 4; i++)
-            _potController.AdvanceBowlPhase();
+        _controller = new GameController();
+        _controller.StartNewGame();
 
         GD.Print("七荤八素启动");
-        GD.Print($"Chapter: {_gameState.Run.Chapter}");
-        GD.Print($"Pot: {_gameState.Run.PotIndex}");
-        GD.Print($"Final Pot: {_gameState.Run.IsFinalPot}");
-        GD.Print($"Phase: {_gameState.Pot.Phase}");
+        GD.Print($"Chapter: {_controller.State.Run.Chapter}");
+        GD.Print($"Pot: {_controller.State.Run.PotIndex}");
+        GD.Print($"Final Pot: {_controller.State.Run.IsFinalPot}");
+        GD.Print($"Phase: {_controller.State.Pot.Phase}");
 
         BuildUI();
         RefreshUI();
@@ -188,13 +174,11 @@ public partial class Main : Node
     private void OnIngredientHover(string ingredientId)
     {
         var def = IngredientData.Registry.Get(ingredientId);
-        var pot = _gameState.Pot;
 
         int? previewBaseScore = null;
-        if (pot.Phase == PotPhase.InProgress && pot.CurrentBowlPhase == BowlPhase.IngredientResolve)
+        if (_controller.CanAddIngredient)
         {
-            var inst = IngredientData.CreateInstance(ingredientId);
-            var preview = _potController.PreviewIngredient(inst, _effectSystem);
+            var preview = _controller.PreviewIngredient(ingredientId);
             previewBaseScore = preview.PreviewBaseScore;
         }
 
@@ -246,32 +230,7 @@ public partial class Main : Node
 
     private void OnIngredientPressed(string ingredientId)
     {
-        var instance = IngredientData.CreateInstance(ingredientId);
-        _potController.AddIngredient(instance, _effectSystem);
-
-        var pot = _gameState.Pot;
-
-        // 最终锅不逐碗结算：整锅持续累积，等玩家点「结束煮粥」后一次性结算
-        if (!_gameState.Run.IsFinalPot)
-        {
-            // 食材投入后自动完成当前碗：从 IngredientResolve 推进到 End
-            // ScoreCalculation 阶段需先调用 CalculateScore() 再推进
-            while (pot.CurrentBowlPhase != BowlPhase.End && pot.Phase == PotPhase.InProgress)
-            {
-                if (pot.CurrentBowlPhase == BowlPhase.ScoreCalculation)
-                    _potController.CalculateScore();
-                _potController.AdvanceBowlPhase();
-            }
-
-            // 未达上限则开始下一碗，并推进到 IngredientResolve
-            if (pot.Phase == PotPhase.InProgress)
-            {
-                _potController.StartNextBowl();
-                for (int i = 0; i < 4; i++)
-                    _potController.AdvanceBowlPhase();
-            }
-        }
-
+        _controller.AddIngredient(ingredientId);
         RefreshUI();
     }
 
@@ -281,18 +240,17 @@ public partial class Main : Node
     /// </summary>
     private void OnEndCookingPressed()
     {
-        if (!_gameState.Run.IsFinalPot || _gameState.Pot.Phase != PotPhase.InProgress)
+        if (!_controller.IsFinalPot || _controller.Pot.Phase != PotPhase.InProgress)
             return;
 
-        // 最终锅的食客（饕餮）与奖励规则尚未接入内容层，暂用正式普通食客数据占位
-        _runController.EndCooking(CustomerData.CreateNormalInstance());
+        _controller.EndCooking();
         RefreshUI();
     }
 
     private void RefreshUI()
     {
-        var run = _gameState.Run;
-        var pot = _gameState.Pot;
+        var run = _controller.Run;
+        var pot = _controller.Pot;
 
         _chapterLabel.Text = $"第 {run.Chapter} 章";
         _potLabel.Text = run.IsFinalPot ? "最终锅" : $"第 {run.PotIndex} 锅";
@@ -312,12 +270,11 @@ public partial class Main : Node
         _totalScoreLabel.Text = $"本锅累计基础分：{pot.TotalBaseScore}";
         _flavorLabel.Text = ToFlavorText(pot);
 
-        bool canAct = pot.Phase == PotPhase.InProgress
-                      && pot.CurrentBowlPhase == BowlPhase.IngredientResolve;
+        bool canAct = _controller.CanAddIngredient;
         foreach (var btn in _ingredientButtons)
             btn.Disabled = !canAct;
 
-        _endCookingButton.Disabled = !(run.IsFinalPot && pot.Phase == PotPhase.InProgress);
+        _endCookingButton.Disabled = !(_controller.IsFinalPot && pot.Phase == PotPhase.InProgress);
     }
 
     private static string ToBowlPhaseText(BowlPhase phase) => phase switch
