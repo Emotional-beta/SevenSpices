@@ -131,4 +131,20 @@ public static class IngredientData
     /// <summary>从正式 Registry 按 ID 创建新的 IngredientInstance。</summary>
     public static IngredientInstance CreateInstance(string ingredientId) =>
         new(Registry.Get(ingredientId));
+
+    /// <summary>
+    /// 创建初始食材篮：5 个米饭 + 1 个职业特殊食材。
+    /// 职业系统未实现，暂用 1 个辣椒占位。
+    /// </summary>
+    public static IReadOnlyList<IngredientInstance> CreateInitialBasket()
+    {
+        var basket = new List<IngredientInstance>(6);
+        for (int i = 0; i < 5; i++)
+            basket.Add(new IngredientInstance(Rice));
+
+        // TODO 职业系统：用玩家职业的特殊食材替换此辣椒占位。
+        basket.Add(new IngredientInstance(Pepper));
+
+        return basket;
+    }
 }

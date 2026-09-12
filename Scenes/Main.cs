@@ -1,5 +1,4 @@
 using Godot;
-using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
@@ -10,8 +9,9 @@ namespace SevenSpices;
 public partial class Main : Node
 {
     private GameController _controller = null!;
-    private Button[] _ingredientButtons = null!;
-    private string[] _ingredientIds = null!;
+    private HBoxContainer _candidateRow = null!;
+    private Button _skipBowlButton = null!;
+    private Label _poolCountLabel = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
@@ -105,29 +105,22 @@ public partial class Main : Node
         sep2.CustomMinimumSize = new Vector2(0, 10);
         vbox.AddChild(sep2);
 
-        vbox.AddChild(MakeLabel("投入食材", center: true, minHeight: 28));
+        vbox.AddChild(MakeLabel("抽取食材（选择其一加入锅中）", center: true, minHeight: 28));
 
-        var btnRow = new HBoxContainer();
-        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
-        btnRow.AddThemeConstantOverride("separation", 15);
-        vbox.AddChild(btnRow);
+        _candidateRow = new HBoxContainer();
+        _candidateRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _candidateRow.AddThemeConstantOverride("separation", 15);
+        _candidateRow.CustomMinimumSize = new Vector2(0, 40);
+        vbox.AddChild(_candidateRow);
 
-        string[] ids = { "rice", "sugar", "pepper", "red_date" };
-        _ingredientIds = ids;
-        _ingredientButtons = new Button[ids.Length];
-        for (int i = 0; i < ids.Length; i++)
-        {
-            string capturedId = ids[i];
-            var def = IngredientData.Registry.Get(capturedId);
-            var btn = new Button();
-            btn.Text = def.Name;
-            btn.CustomMinimumSize = new Vector2(80, 36);
-            btn.Pressed += () => OnIngredientPressed(capturedId);
-            btn.MouseEntered += () => OnIngredientHover(capturedId);
-            btn.MouseExited += HideTooltip;
-            btnRow.AddChild(btn);
-            _ingredientButtons[i] = btn;
-        }
+        _poolCountLabel = MakeLabel("剩余食材池：0", center: true, minHeight: 28);
+        vbox.AddChild(_poolCountLabel);
+
+        _skipBowlButton = new Button();
+        _skipBowlButton.Text = "跳过本碗（池已空）";
+        _skipBowlButton.CustomMinimumSize = new Vector2(180, 36);
+        _skipBowlButton.Pressed += OnSkipBowlPressed;
+        vbox.AddChild(_skipBowlButton);
 
         // 最终锅专用入口：玩家决定「放好」后，整口最终锅一次性结算
         _endCookingButton = new Button();
@@ -171,18 +164,16 @@ public partial class Main : Node
         return lbl;
     }
 
-    private void OnIngredientHover(string ingredientId)
+    private void OnCandidateHover(IngredientInstance candidate)
     {
-        var def = IngredientData.Registry.Get(ingredientId);
-
         int? previewBaseScore = null;
-        if (_controller.CanAddIngredient)
+        if (_controller.CanSelectIngredient)
         {
-            var preview = _controller.PreviewIngredient(ingredientId);
+            var preview = _controller.PreviewIngredient(candidate);
             previewBaseScore = preview.PreviewBaseScore;
         }
 
-        _tooltipLabel.Text = BuildIngredientTooltip(def, previewBaseScore);
+        _tooltipLabel.Text = BuildIngredientTooltip(candidate.Definition, previewBaseScore);
 
         // 记录鼠标位置（tooltip 偏移显示在鼠标右下方），等下一帧 Size 确定后 clamp
         _tooltipAnchor = GetViewport().GetMousePosition() + new Vector2(14, 14);
@@ -228,9 +219,21 @@ public partial class Main : Node
         _tooltipPanel.Position = new Vector2(x, y);
     }
 
-    private void OnIngredientPressed(string ingredientId)
+    private void OnCandidatePressed(IngredientInstance candidate)
     {
-        _controller.AddIngredient(ingredientId);
+        if (!_controller.CanSelectIngredient)
+            return;
+
+        _controller.SelectIngredient(candidate.InstanceId);
+        RefreshUI();
+    }
+
+    private void OnSkipBowlPressed()
+    {
+        if (!_controller.CanSkipBowl)
+            return;
+
+        _controller.SkipBowl();
         RefreshUI();
     }
 
@@ -270,11 +273,39 @@ public partial class Main : Node
         _totalScoreLabel.Text = $"本锅累计基础分：{pot.TotalBaseScore}";
         _flavorLabel.Text = ToFlavorText(pot);
 
-        bool canAct = _controller.CanAddIngredient;
-        foreach (var btn in _ingredientButtons)
-            btn.Disabled = !canAct;
+        _poolCountLabel.Text = $"剩余食材池：{_controller.RemainingPoolCount}";
 
+        RebuildCandidateButtons();
+
+        _skipBowlButton.Disabled = !_controller.CanSkipBowl;
         _endCookingButton.Disabled = !(_controller.IsFinalPot && pot.Phase == PotPhase.InProgress);
+    }
+
+    /// <summary>
+    /// 按当前候选重建动态食材按钮（0~3 个）。
+    /// 表现层只读 CurrentCandidates 并点击回调 GameController，不参与任何流程判断。
+    /// </summary>
+    private void RebuildCandidateButtons()
+    {
+        foreach (Node child in _candidateRow.GetChildren())
+        {
+            _candidateRow.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        bool canSelect = _controller.CanSelectIngredient;
+        foreach (var candidate in _controller.CurrentCandidates)
+        {
+            var captured = candidate;
+            var btn = new Button();
+            btn.Text = captured.Definition.Name;
+            btn.CustomMinimumSize = new Vector2(80, 36);
+            btn.Disabled = !canSelect;
+            btn.Pressed += () => OnCandidatePressed(captured);
+            btn.MouseEntered += () => OnCandidateHover(captured);
+            btn.MouseExited += HideTooltip;
+            _candidateRow.AddChild(btn);
+        }
     }
 
     private static string ToBowlPhaseText(BowlPhase phase) => phase switch

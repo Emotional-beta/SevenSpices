@@ -29,6 +29,7 @@ public static class PreviewIngredientTests
         Test_Preview_MatchesRealExecution_Sugar();
         Test_Preview_MatchesRealExecution_Pepper();
         Test_Preview_MatchesRealExecution_RedDate_ConditionMet();
+        Test_Preview_AtIngredientSelection_ReturnsAndDoesNotMutateState();
         Test_Preview_WrongPhase_Throws();
 
         Console.WriteLine("All PreviewIngredientTests passed.");
@@ -46,6 +47,18 @@ public static class PreviewIngredientTests
         ctrl.AdvanceBowlPhase(); // → ItemPhase
         ctrl.AdvanceBowlPhase(); // → IngredientSelection
         ctrl.AdvanceBowlPhase(); // → IngredientResolve
+        return ctrl;
+    }
+
+    static PotController MakeControllerAtIngredientSelection(out GameState state)
+    {
+        state = new GameState();
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+        ctrl.StartBowl();
+        ctrl.AdvanceBowlPhase(); // → Customer
+        ctrl.AdvanceBowlPhase(); // → ItemPhase
+        ctrl.AdvanceBowlPhase(); // → IngredientSelection
         return ctrl;
     }
 
@@ -213,6 +226,33 @@ public static class PreviewIngredientTests
 
     // ── 错误相位保护 ──────────────────────────────────────────────────────────
 
+    /// <summary>IngredientSelection 阶段（A2 悬停候选场景）预览：正常返回且不修改真实状态。</summary>
+    static void Test_Preview_AtIngredientSelection_ReturnsAndDoesNotMutateState()
+    {
+        var ctrl = MakeControllerAtIngredientSelection(out var state);
+        var inst = IngredientData.CreateInstance("rice"); // BaseScore=1, Umami+1
+        var es = new EffectSystem();
+
+        int baseBefore = state.Pot.BaseScore;
+        int totalBefore = state.Pot.TotalBaseScore;
+        int umamiBefore = state.Pot.GetFlavor(FlavorType.Umami);
+        var phaseBefore = state.Pot.CurrentBowlPhase;
+
+        var preview = ctrl.PreviewIngredient(inst, es);
+
+        Assert(preview.PreviewBaseScore == baseBefore + inst.Definition.BaseScore,
+            "IngredientSelection 阶段预览应返回正确基础分");
+        Assert(state.Pot.BaseScore == baseBefore, "IngredientSelection 阶段预览不得修改真实 BaseScore");
+        Assert(state.Pot.TotalBaseScore == totalBefore,
+            "IngredientSelection 阶段预览不得修改 TotalBaseScore");
+        Assert(state.Pot.GetFlavor(FlavorType.Umami) == umamiBefore,
+            "IngredientSelection 阶段预览不得修改真实味道");
+        Assert(state.Pot.Ingredients.Count == 0,
+            "IngredientSelection 阶段预览不得向锅中添加食材");
+        Assert(state.Pot.CurrentBowlPhase == phaseBefore,
+            "IngredientSelection 阶段预览不得修改碗阶段");
+    }
+
     static void Test_Preview_WrongPhase_Throws()
     {
         var state = new GameState();
@@ -226,7 +266,7 @@ public static class PreviewIngredientTests
         try { ctrl.PreviewIngredient(inst, es); }
         catch (InvalidOperationException) { threw = true; }
 
-        Assert(threw, "非 IngredientResolve 阶段调用 PreviewIngredient 应抛 InvalidOperationException");
+        Assert(threw, "非 IngredientSelection / IngredientResolve 阶段调用 PreviewIngredient 应抛 InvalidOperationException");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

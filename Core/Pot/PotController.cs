@@ -164,7 +164,7 @@ public class PotController
     /// <summary>
     /// 预测将某食材加入当前碗后的结果，不修改任何真实状态。
     /// 对当前 PotState 做快照拷贝，在拷贝上运行与 AddIngredient 相同的计算逻辑，返回预测结果。
-    /// 只能在 IngredientResolve 阶段调用。
+    /// 可在 IngredientSelection（悬停候选时）或 IngredientResolve 阶段调用。
     /// </summary>
     public IngredientPreview PreviewIngredient(IngredientInstance ingredient, EffectSystem effectSystem)
     {
@@ -172,9 +172,10 @@ public class PotController
         ArgumentNullException.ThrowIfNull(effectSystem);
 
         var pot = _gameState.Pot;
-        if (pot.CurrentBowlPhase != BowlPhase.IngredientResolve)
+        if (pot.CurrentBowlPhase != BowlPhase.IngredientResolve
+            && pot.CurrentBowlPhase != BowlPhase.IngredientSelection)
             throw new InvalidOperationException(
-                $"Cannot preview ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientResolve.");
+                $"Cannot preview ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientSelection or IngredientResolve.");
 
         var snapshot = PotStateSnapshot.From(pot);
         snapshot.Ingredients.Add(ingredient);

@@ -28,6 +28,7 @@ public class IngredientPool
     /// <summary>
     /// 无放回抽取，最多 maxCount 个。不足则全部抽出。
     /// 返回候选列表——调用方必须在选择后调用 Confirm 或 ReturnCandidates。
+    /// 同一时间只允许存在一批未结算候选；在 Confirm/ReturnCandidates 之前再次 Draw 会导致上一批候选丢失。
     /// </summary>
     public IReadOnlyList<IngredientInstance> Draw(int maxCount = 3)
     {
