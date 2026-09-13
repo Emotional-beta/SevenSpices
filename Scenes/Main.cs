@@ -5,6 +5,7 @@ using SevenSpices.Core.Events;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
+using SevenSpices.Core.Pot;
 using SevenSpices.Core.Scoring;
 
 namespace SevenSpices;
@@ -293,14 +294,11 @@ public partial class Main : Node
 
     private void OnCandidateHover(IngredientInstance candidate)
     {
-        int? previewBaseScore = null;
+        IngredientPreview? preview = null;
         if (_controller.CanSelectIngredient)
-        {
-            var preview = _controller.PreviewIngredient(candidate);
-            previewBaseScore = preview.PreviewBaseScore;
-        }
+            preview = _controller.PreviewIngredient(candidate);
 
-        ShowIngredientTooltip(candidate, previewBaseScore);
+        ShowIngredientTooltip(candidate, preview);
     }
 
     /// <summary>
@@ -311,9 +309,9 @@ public partial class Main : Node
         ShowIngredientTooltip(candidate, null);
     }
 
-    private void ShowIngredientTooltip(IngredientInstance candidate, int? previewBaseScore)
+    private void ShowIngredientTooltip(IngredientInstance candidate, IngredientPreview? preview)
     {
-        _tooltipLabel.Text = BuildIngredientTooltip(candidate.Definition, previewBaseScore);
+        _tooltipLabel.Text = BuildIngredientTooltip(candidate.Definition, preview);
 
         // 记录鼠标位置（tooltip 偏移显示在鼠标右下方），等下一帧 Size 确定后 clamp
         _tooltipAnchor = GetViewport().GetMousePosition() + new Vector2(14, 14);
@@ -796,7 +794,7 @@ public partial class Main : Node
 
     // ── 食材 Tooltip ──────────────────────────────────────────────────────────
 
-    private static string BuildIngredientTooltip(IngredientDefinition def, int? previewBaseScore = null)
+    private static string BuildIngredientTooltip(IngredientDefinition def, IngredientPreview? preview = null)
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"名称：{def.Name}");
@@ -816,8 +814,8 @@ public partial class Main : Node
                 sb.AppendLine(DescribeEffect(effect));
         }
 
-        if (previewBaseScore.HasValue)
-            sb.Append($"投入后预计基础分：{previewBaseScore.Value}");
+        if (preview is not null)
+            sb.Append($"投入后预计分数：{preview.PreviewFinalScore}");
 
         return sb.ToString().TrimEnd();
     }

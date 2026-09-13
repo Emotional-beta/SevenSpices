@@ -188,7 +188,7 @@ public class PotController
         snapshot.Ingredients.Add(ingredient);
         ApplyIngredientTo(ingredient, snapshot, _gameState, effectSystem);
 
-        return new IngredientPreview(snapshot.BaseScore);
+        return new IngredientPreview(snapshot.BaseScore, ScoreCalculator.ComputeFinalScore(snapshot));
     }
 
     /// <summary>

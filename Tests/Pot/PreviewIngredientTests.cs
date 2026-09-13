@@ -16,6 +16,10 @@ public static class PreviewIngredientTests
     public static void RunAll()
     {
         Test_Preview_BasicScore();
+        Test_Preview_FinalScore_Bowl1_EqualsBaseScore();
+        Test_Preview_FinalScore_Bowl6_AppliesMultiplier();
+        Test_Preview_FinalScore_Bowl10_AppliesMultiplier();
+        Test_Preview_FinalScore_WithIceCube_IncludesEffectMultiplier();
         Test_Preview_WithFlavor_ConditionalEffect_NotYetMet();
         Test_Preview_WithFlavor_ConditionalEffect_Met();
         Test_Preview_NoSideEffect_BaseScore();
@@ -73,6 +77,65 @@ public static class PreviewIngredientTests
         var preview = ctrl.PreviewIngredient(inst, es);
 
         Assert(preview.PreviewBaseScore == 1, "米饭预测 BaseScore 应为 1");
+    }
+
+    // ── A2. 最终分预测（应用碗倍率与效果倍率） ────────────────────────────────
+
+    static void Test_Preview_FinalScore_Bowl1_EqualsBaseScore()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        state.Pot.BowlNumber = 1; // ×1
+        var inst = IngredientData.CreateInstance("rice"); // BaseScore=1
+        var es = new EffectSystem();
+
+        var preview = ctrl.PreviewIngredient(inst, es);
+
+        Assert(preview.PreviewBaseScore == 1, "第1碗米饭预测 BaseScore 应为 1");
+        Assert(preview.PreviewFinalScore == preview.PreviewBaseScore,
+            "第1碗（×1）且无效果倍率时，PreviewFinalScore 应等于 PreviewBaseScore");
+    }
+
+    static void Test_Preview_FinalScore_Bowl6_AppliesMultiplier()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        state.Pot.BowlNumber = 6; // ×2
+        var inst = IngredientData.CreateInstance("sugar"); // BaseScore=2
+        var es = new EffectSystem();
+
+        var preview = ctrl.PreviewIngredient(inst, es);
+
+        Assert(preview.PreviewBaseScore == 2, "第6碗糖预测 BaseScore 应为 2");
+        Assert(preview.PreviewFinalScore == (int)Math.Floor(preview.PreviewBaseScore * 2.0),
+            "第6碗（×2）PreviewFinalScore 应为 floor(BaseScore × 2)");
+    }
+
+    static void Test_Preview_FinalScore_Bowl10_AppliesMultiplier()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        state.Pot.BowlNumber = 10; // ×32
+        var inst = IngredientData.CreateInstance("sugar"); // BaseScore=2
+        var es = new EffectSystem();
+
+        var preview = ctrl.PreviewIngredient(inst, es);
+
+        Assert(preview.PreviewBaseScore == 2, "第10碗糖预测 BaseScore 应为 2");
+        Assert(preview.PreviewFinalScore == (int)Math.Floor(preview.PreviewBaseScore * 32.0),
+            "第10碗（×32）PreviewFinalScore 应为 floor(BaseScore × 32)");
+    }
+
+    static void Test_Preview_FinalScore_WithIceCube_IncludesEffectMultiplier()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        state.Pot.BowlNumber = 1; // ×1
+        state.Pot.BaseScore = 2;  // 已有基础分，冰块 BaseScore=0，仅贡献 ×1.5 倍率
+        var inst = IngredientData.CreateInstance("ice_cube");
+        var es = new EffectSystem();
+
+        var preview = ctrl.PreviewIngredient(inst, es);
+
+        Assert(preview.PreviewBaseScore == 2, "冰块不增加基础分，预测 BaseScore 应保持 2");
+        Assert(preview.PreviewFinalScore == 3,
+            "第1碗（×1）含冰块效果倍率 1.5 时，floor(2 × 1 × 1.5) = 3");
     }
 
     // ── B. 味道效果预测 ───────────────────────────────────────────────────────
