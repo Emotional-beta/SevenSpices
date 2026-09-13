@@ -24,6 +24,13 @@ public partial class Main : Node
     private const string DetailClosedText = "详情 ▸";
     private const string ProfessionConfirmText = "确认重开？";
 
+    // M6：阶段取证驱动的命令行开关（`--` 之后的用户参数）。仅显式带上时才创建驱动器，默认路径零副作用。
+    private const string UiTourFlag = "--ui-tour";
+
+    // M6：tour 模式固定随机种子，保证每次取证的食材 / 食客 / 候选可复现；可用 --ui-tour-seed=NNN 覆盖。
+    private const string UiTourSeedPrefix = "--ui-tour-seed=";
+    private const int DefaultUiTourSeed = 20260914;
+
     private static readonly (string Name, FlavorType Type)[] FlavorRows =
     [
         ("酸", FlavorType.Sour),
@@ -125,7 +132,13 @@ public partial class Main : Node
         GetTree().Root.Theme = PixelTheme.Build();
         GetWindow().MinSize = new Vector2I(UiMetrics.BaseWidth, UiMetrics.BaseHeight);
 
-        _controller = new GameController(metaState: _metaState);
+        // M6：tour 模式注入固定种子（可被 --ui-tour-seed=NNN 覆盖），使截图证据可复现；
+        // 不带 --ui-tour 时保持原样随机，默认启动路径零影响。
+        string[] userArgs = OS.GetCmdlineUserArgs();
+        bool tourMode = userArgs.Contains(UiTourFlag);
+        _controller = tourMode
+            ? new GameController(metaState: _metaState, random: new Random(ResolveTourSeed(userArgs)))
+            : new GameController(metaState: _metaState);
         _controller.StartNewGame();
 
         GD.Print("七荤八素启动");
@@ -139,7 +152,56 @@ public partial class Main : Node
 
         // 核心系统在关键节点发布事件；表现层只监听并置脏，不反查流程。
         _controller.Events.Subscribe(OnGameEvent);
+
+        // M6：仅当显式传入 --ui-tour 时挂载阶段取证驱动器；否则行为与既有完全一致。
+        if (tourMode)
+        {
+            var tour = new UiSnapshotTour();
+            tour.Bind(this);
+            AddChild(tour);
+        }
     }
+
+    /// <summary>
+    /// 解析 tour 模式的随机种子：命中 <c>--ui-tour-seed=NNN</c> 且可解析时用该值，
+    /// 否则回退到固定默认种子；参数存在但无法解析时显式报错，不静默。
+    /// </summary>
+    private static int ResolveTourSeed(string[] userArgs)
+    {
+        foreach (string arg in userArgs)
+        {
+            if (!arg.StartsWith(UiTourSeedPrefix, System.StringComparison.Ordinal))
+                continue;
+
+            string value = arg[UiTourSeedPrefix.Length..];
+            if (int.TryParse(value, out int seed))
+                return seed;
+
+            GD.PrintErr($"[Tour] FAIL：无法解析种子参数 '{arg}'，将使用默认种子 {DefaultUiTourSeed}。");
+        }
+
+        return DefaultUiTourSeed;
+    }
+
+    // ── M6：阶段取证驱动器的只读探针（internal，仅供同程序集的 UiSnapshotTour 使用）─────
+    // 驱动器只通过这些只读入口观察状态与 UI，不写任何游戏状态；打开开关时也不改变默认路径。
+
+    internal GameController Controller => _controller;
+    internal HFlowContainer CandidateRow => _candidateRow;
+    internal Button SkipBowlButton => _skipBowlButton;
+    internal Button NextPotButton => _nextPotButton;
+    internal Button EndCookingButton => _endCookingButton;
+    internal PanelContainer RewardSection => _rewardSection;
+    internal HFlowContainer RewardRow => _rewardRow;
+    internal PanelContainer CompanionSection => _companionSection;
+    internal HFlowContainer CompanionCandidateRow => _companionCandidateRow;
+    internal PanelContainer ShopSection => _shopSection;
+    internal HFlowContainer ShopRow => _shopRow;
+    internal PanelContainer RouteSection => _routeSection;
+    internal HFlowContainer RouteRow => _routeRow;
+    internal Label PotLabel => _potLabel;
+    internal Button RestartButton => _restartButton;
+    internal Label RunEndLabel => _runEndLabel;
 
     private void OnGameEvent(GameEvent gameEvent)
     {
@@ -488,22 +550,39 @@ public partial class Main : Node
     }
 
     /// <summary>
-    /// 常驻 HUD（固定不滚动）：分数 + 倍率、章 / 锅 / 碗数 / 阶段、七味短条、详情开合按钮。
-    /// 依据《界面风格规范》§六「常驻精简」；纵向刻意收紧（≈104px），给下方滚动主体留空间。
+    /// 常驻 HUD（固定不滚动）：顶部青铜雷纹饰带 + 分数 / 倍率、章 / 锅 / 碗数 / 阶段、七味短条、详情开合按钮。
+    /// 依据《界面风格规范》§六「常驻精简」；纵向刻意收紧（实测 112px，预算 ≤112px），给下方滚动主体留空间。
     /// </summary>
     private void BuildHud(Container parent)
     {
         var hud = MakePanel("PanelPlate");
         parent.AddChild(hud);
 
-        var hudCol = MakeColumn(UiMetrics.Gap);
+        // M5：HUD 顶部一条低调的青铜雷纹饰带（纯几何、零贴图）。
+        // 饰带与首行放在零间隔子列里紧贴，列内其余间隔收窄到 4（HUD 内细粒度间距豁免，
+        // 见《界面风格规范》§四），使 HUD 总高仍不超过 112px 预算。
+        var hudCol = MakeColumn(UiMetrics.Unit / 2);
         hud.AddChild(hudCol);
+
+        var hudTop = MakeColumn(0);
+        hudCol.AddChild(hudTop);
+
+        var hudMotif = new MotifBand
+        {
+            Kind = MotifKind.Thunder,
+            Orientation = MotifOrientation.Horizontal,
+            Unit = UiMetrics.Unit,
+            Pen = 1,
+            MotifColor = UiPalette.Border,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        hudTop.AddChild(hudMotif);
 
         // 第一行：分数（标题字号，醒目）+ 倍率
         var scoreRow = new HBoxContainer();
         scoreRow.Alignment = BoxContainer.AlignmentMode.Center;
         scoreRow.AddThemeConstantOverride("separation", UiMetrics.Pad);
-        hudCol.AddChild(scoreRow);
+        hudTop.AddChild(scoreRow);
 
         _hudScoreLabel = MakeLabel("分数 0", center: true, variation: "LabelTitle");
         scoreRow.AddChild(_hudScoreLabel);
