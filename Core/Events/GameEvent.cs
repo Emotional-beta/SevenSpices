@@ -220,3 +220,27 @@ public sealed class ShopPurchasedEvent : GameEvent
     }
 }
 
+/// <summary>玩家跳过商店（或不再购买）：报价已清空、商店环节已结算。</summary>
+public sealed class ShopSkippedEvent : GameEvent
+{
+    /// <summary>跳过时被清空的报价数量。</summary>
+    public int OfferCount { get; }
+
+    public ShopSkippedEvent(int offerCount)
+    {
+        OfferCount = offerCount;
+    }
+}
+
+/// <summary>玩家跳过伙伴选择（或不再选择）：候选已清空、伙伴环节已处理，不获得任何伙伴。</summary>
+public sealed class CompanionChoiceSkippedEvent : GameEvent
+{
+    /// <summary>跳过时被清空的候选数量。</summary>
+    public int CandidateCount { get; }
+
+    public CompanionChoiceSkippedEvent(int candidateCount)
+    {
+        CandidateCount = candidateCount;
+    }
+}
+

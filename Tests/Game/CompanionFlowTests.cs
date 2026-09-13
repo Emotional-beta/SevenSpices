@@ -21,6 +21,7 @@ public static class CompanionFlowTests
         Test_PotEnd_WithSatisfiedRare_OffersCandidates_AndBlocksAdvance();
         Test_ChooseCompanion_AddsInstance_IsImmediatelyActive_AndUnlocksAdvance();
         Test_SkipCompanionChoice_UnlocksAdvance_NoCompanionAdded();
+        Test_SkipCompanionChoice_PublishesSkippedEvent();
         Test_NoCandidates_AutoResolved_CanAdvance();
         Test_ChooseCompanion_PublishesCompanionAddedEvent();
         Test_DuplicateRewards_AreDeduplicated();
@@ -163,6 +164,24 @@ public static class CompanionFlowTests
         Assert(gc.CompanionCandidates.Count == 0, "跳过后候选应清空");
         Assert(!gc.IsAwaitingCompanionChoice, "跳过后不应再处于等待态");
         Assert(gc.CanAdvanceToNextPot, "跳过后应可推进到下一锅");
+    }
+
+    /// <summary>6c-b. SkipCompanionChoice 发布 CompanionChoiceSkippedEvent，负载为跳过时的候选数。</summary>
+    static void Test_SkipCompanionChoice_PublishesSkippedEvent()
+    {
+        var reward = CompanionData.GenerousGuestCompanion;
+        var gc = SetupPotWithSatisfiedRare(reward, out _, seed: 7010);
+
+        CompanionChoiceSkippedEvent? skipped = null;
+        gc.Events.Subscribe<CompanionChoiceSkippedEvent>(e => skipped = e);
+
+        int candidatesBefore = gc.CompanionCandidates.Count;
+        gc.SkipCompanionChoice();
+
+        Assert(skipped != null, "SkipCompanionChoice 应发布 CompanionChoiceSkippedEvent");
+        Assert(skipped!.CandidateCount == candidatesBefore,
+            $"CompanionChoiceSkippedEvent.CandidateCount 应为跳过时的候选数（{candidatesBefore}），实际 {skipped.CandidateCount}");
+        Assert(gc.CanAdvanceToNextPot, "跳过伙伴选择后 CanAdvanceToNextPot 应为 true");
     }
 
     /// <summary>6d. 无候选（本锅无满意稀有食客）→ 自动 resolved，可推进。</summary>

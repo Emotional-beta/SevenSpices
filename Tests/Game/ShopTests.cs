@@ -22,6 +22,7 @@ public static class ShopTests
         Test_Buy_WithInsufficientGold_Throws();
         Test_Buy_PurchasedOfferTwice_Throws();
         Test_SkipShop_Resolves_And_UnlocksAdvance();
+        Test_SkipShop_PublishesSkippedEvent();
         Test_ShopConfig_ZeroOffers_NoShopAndNoBlock();
         Test_IngredientPrice_IsConfigurable();
         Test_FinalPot_NoShop();
@@ -200,6 +201,28 @@ public static class ShopTests
         Assert(!gc.IsShopOpen, "跳过后不应再营业");
         Assert(gc.ShopOffers.Count == 0, "跳过后报价应清空");
         Assert(gc.CanAdvanceToNextPot, "跳过后应可推进到下一锅");
+    }
+
+    /// <summary>
+    /// 5b. SkipShop 发布 ShopSkippedEvent，负载为跳过时清空的报价数；
+    /// 语义回归：跳过后 CanAdvanceToNextPot 必须为 true（修复「点跳过没反应」的根因）。
+    /// </summary>
+    static void Test_SkipShop_PublishesSkippedEvent()
+    {
+        var gc = new GameController(new GameState(), NoRare(), new Random(9014));
+        gc.StartNewGame();
+        FinishPotResolveRewardAndCompanion(gc);
+
+        ShopSkippedEvent? skipped = null;
+        gc.Events.Subscribe<ShopSkippedEvent>(e => skipped = e);
+
+        int offersBefore = gc.ShopOffers.Count;
+        gc.SkipShop();
+
+        Assert(skipped != null, "SkipShop 应发布 ShopSkippedEvent");
+        Assert(skipped!.OfferCount == offersBefore,
+            $"ShopSkippedEvent.OfferCount 应为跳过时的报价数（{offersBefore}），实际 {skipped.OfferCount}");
+        Assert(gc.CanAdvanceToNextPot, "跳过商店后 CanAdvanceToNextPot 应为 true");
     }
 
     /// <summary>6. 配置为 0 条报价：无商店且不卡推进（商店环节自动视为已结算）。</summary>

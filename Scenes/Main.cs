@@ -371,6 +371,7 @@ public partial class Main : Node
             return;
 
         _controller.SelectIngredient(candidate.InstanceId);
+        _uiDirty = true;
     }
 
     /// <summary>
@@ -383,6 +384,7 @@ public partial class Main : Node
             return;
 
         _controller.ChooseReward(candidate.InstanceId);
+        _uiDirty = true;
     }
 
     /// <summary>伙伴候选选择：只转发 GameController.ChooseCompanion，随后刷新。</summary>
@@ -392,6 +394,7 @@ public partial class Main : Node
             return;
 
         _controller.ChooseCompanion(candidate.Id);
+        _uiDirty = true;
     }
 
     /// <summary>跳过伙伴选择：只转发 GameController.SkipCompanionChoice。</summary>
@@ -401,6 +404,7 @@ public partial class Main : Node
             return;
 
         _controller.SkipCompanionChoice();
+        _uiDirty = true;
     }
 
     /// <summary>商店购买：只转发 GameController.Buy，不做任何流程判断。</summary>
@@ -410,6 +414,7 @@ public partial class Main : Node
             return;
 
         _controller.Buy(offerIndex);
+        _uiDirty = true;
     }
 
     /// <summary>跳过商店：只转发 GameController.SkipShop。</summary>
@@ -419,6 +424,7 @@ public partial class Main : Node
             return;
 
         _controller.SkipShop();
+        _uiDirty = true;
     }
 
     private void OnSkipBowlPressed()
@@ -427,6 +433,7 @@ public partial class Main : Node
             return;
 
         _controller.SkipBowl();
+        _uiDirty = true;
     }
 
     /// <summary>
@@ -439,6 +446,7 @@ public partial class Main : Node
             return;
 
         _controller.AdvanceToNextPot();
+        _uiDirty = true;
     }
 
     /// <summary>
@@ -451,6 +459,7 @@ public partial class Main : Node
             return;
 
         _controller.EndCooking();
+        _uiDirty = true;
     }
 
     private void RefreshUI()
@@ -709,6 +718,7 @@ public partial class Main : Node
             return;
 
         _controller.UseItem(item.InstanceId);
+        _uiDirty = true;
     }
 
     private void OnItemHover(ItemInstance item)

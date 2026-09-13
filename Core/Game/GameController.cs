@@ -409,8 +409,11 @@ public class GameController
             throw new InvalidOperationException(
                 $"Cannot skip companion choice: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, resolved={_companionResolved}, candidates={_companionCandidates.Count}.");
 
+        int candidateCount = _companionCandidates.Count;
         _companionCandidates.Clear();
         _companionResolved = true;
+
+        _events.Publish(new CompanionChoiceSkippedEvent(candidateCount));
     }
 
     /// <summary>
@@ -460,8 +463,11 @@ public class GameController
             throw new InvalidOperationException(
                 $"Cannot skip shop: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, resolved={_shopResolved}, offers={_shopOffers.Count}.");
 
+        int offerCount = _shopOffers.Count;
         _shopResolved = true;
         _shopOffers.Clear();
+
+        _events.Publish(new ShopSkippedEvent(offerCount));
     }
 
     /// <summary>
