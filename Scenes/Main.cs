@@ -23,6 +23,9 @@ public partial class Main : Node
     private HBoxContainer _companionCandidateRow = null!;
     private Button _skipCompanionButton = null!;
     private VBoxContainer _ownedCompanionList = null!;
+    private VBoxContainer _shopSection = null!;
+    private HBoxContainer _shopRow = null!;
+    private Button _skipShopButton = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
@@ -207,6 +210,26 @@ public partial class Main : Node
         _ownedCompanionList.AddThemeConstantOverride("separation", 4);
         vbox.AddChild(_ownedCompanionList);
 
+        // 普通锅结束后的商店区域（仅营业时显示）
+        _shopSection = new VBoxContainer();
+        _shopSection.AddThemeConstantOverride("separation", 8);
+        _shopSection.Visible = false;
+        vbox.AddChild(_shopSection);
+
+        _shopSection.AddChild(MakeLabel("商店：购买食材 / 道具", center: true, minHeight: 28));
+
+        _shopRow = new HBoxContainer();
+        _shopRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _shopRow.AddThemeConstantOverride("separation", 15);
+        _shopRow.CustomMinimumSize = new Vector2(0, 40);
+        _shopSection.AddChild(_shopRow);
+
+        _skipShopButton = new Button();
+        _skipShopButton.Text = "跳过商店";
+        _skipShopButton.CustomMinimumSize = new Vector2(180, 36);
+        _skipShopButton.Pressed += OnSkipShopPressed;
+        _shopSection.AddChild(_skipShopButton);
+
         // 普通锅结束后的跨锅推进入口
         _nextPotButton = new Button();
         _nextPotButton.Text = "进入下一锅";
@@ -372,6 +395,24 @@ public partial class Main : Node
         _controller.SkipCompanionChoice();
     }
 
+    /// <summary>商店购买：只转发 GameController.Buy，不做任何流程判断。</summary>
+    private void OnBuyPressed(int offerIndex)
+    {
+        if (!_controller.CanBuy(offerIndex))
+            return;
+
+        _controller.Buy(offerIndex);
+    }
+
+    /// <summary>跳过商店：只转发 GameController.SkipShop。</summary>
+    private void OnSkipShopPressed()
+    {
+        if (!_controller.CanSkipShop)
+            return;
+
+        _controller.SkipShop();
+    }
+
     private void OnSkipBowlPressed()
     {
         if (!_controller.CanSkipBowl)
@@ -443,6 +484,7 @@ public partial class Main : Node
         RebuildRewardSection();
         RebuildItemSection();
         RebuildCompanionSection();
+        RebuildShopSection();
 
         bool runComplete = _controller.IsRunComplete;
         _skipBowlButton.Disabled = runComplete || !_controller.CanSkipBowl;
@@ -568,6 +610,59 @@ public partial class Main : Node
                     center: true, minHeight: 24));
             }
         }
+    }
+
+    /// <summary>
+    /// 按当前商店报价重建商店区域（仅营业时显示）。
+    /// 表现层只读 ShopOffers、调 CanBuy/CanSkipShop 判断，再回调 GameController.Buy/SkipShop，
+    /// 不参与任何流程判断。
+    /// </summary>
+    private void RebuildShopSection()
+    {
+        bool open = _controller.IsShopOpen;
+        _shopSection.Visible = open;
+
+        foreach (Node child in _shopRow.GetChildren())
+        {
+            _shopRow.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        if (!open)
+            return;
+
+        var offers = _controller.ShopOffers;
+        for (int i = 0; i < offers.Count; i++)
+        {
+            int index = i;
+            var offer = offers[i];
+
+            var column = new VBoxContainer();
+            column.AddThemeConstantOverride("separation", 4);
+
+            column.AddChild(MakeLabel(
+                $"{offer.DisplayName}（{offer.Price} 金币）", center: true, minHeight: 24));
+
+            var btn = new Button();
+            if (offer.IsPurchased)
+            {
+                btn.Text = "已购买";
+                btn.Disabled = true;
+            }
+            else
+            {
+                btn.Text = "购买";
+                btn.Disabled = !_controller.CanBuy(index);
+            }
+
+            btn.CustomMinimumSize = new Vector2(90, 32);
+            btn.Pressed += () => OnBuyPressed(index);
+            column.AddChild(btn);
+
+            _shopRow.AddChild(column);
+        }
+
+        _skipShopButton.Disabled = !_controller.CanSkipShop;
     }
 
     /// <summary>

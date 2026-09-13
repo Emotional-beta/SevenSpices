@@ -70,6 +70,31 @@ public static class ItemData
     }
 
     /// <summary>
+    /// 从正式 Registry 的全部道具中随机抽取 <paramref name="count"/> 个<b>互不重复</b>的
+    /// Definition 创建实例。用于商店道具陈列（设计文档 §18）。
+    /// <paramref name="count"/> 超过定义总数时返回全部；<paramref name="count"/> ≤ 0 时返回空。
+    /// </summary>
+    public static IReadOnlyList<ItemInstance> CreateRandomInstances(int count, Random random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+
+        var remaining = Registry.GetAll().ToList();
+        int take = Math.Min(count, remaining.Count);
+        if (take <= 0)
+            return Array.Empty<ItemInstance>();
+
+        var instances = new List<ItemInstance>(take);
+        for (int i = 0; i < take; i++)
+        {
+            int index = random.Next(remaining.Count);
+            instances.Add(new ItemInstance(remaining[index]));
+            remaining.RemoveAt(index);
+        }
+
+        return instances;
+    }
+
+    /// <summary>
     /// 创建开局初始道具：从正式 Registry 随机取 1 个（设计规则：开局随机给 1 个道具）。
     /// </summary>
     public static IReadOnlyList<ItemInstance> CreateInitialItems(Random random)

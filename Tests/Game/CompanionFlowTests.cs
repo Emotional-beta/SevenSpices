@@ -40,6 +40,10 @@ public static class CompanionFlowTests
             state.Player.IngredientBasket.Add(new IngredientInstance(IngredientData.Rice));
     }
 
+    /// <summary>关闭商店（陈列数量为 0），使伙伴流程测试不受商店门控影响。</summary>
+    static ShopConfig NoShop() =>
+        new() { IngredientOfferCount = 0, ItemOfferCount = 0 };
+
     static CustomerDefinition MakeRareWithCompanion(CompanionDefinition reward) =>
         new(
             id: $"rare_{reward.Id}",
@@ -86,7 +90,7 @@ public static class CompanionFlowTests
         state = new GameState();
         FillBasketWithRice(state, 3);
         var config = ConfigWithRare(new[] { 1 }, MakeRareWithCompanion(reward));
-        var gc = new GameController(state, config, new Random(seed));
+        var gc = new GameController(state, config, new Random(seed), shop: NoShop());
         gc.StartNewGame();
 
         Assert(gc.CurrentCustomer != null && gc.CurrentCustomer.Definition.IsRare,
@@ -167,7 +171,8 @@ public static class CompanionFlowTests
         var gc = new GameController(
             new GameState(),
             new CustomerAppearanceConfig { RareBowlNumbers = Array.Empty<int>() },
-            new Random(7004));
+            new Random(7004),
+            shop: NoShop());
         gc.StartNewGame();
 
         FinishPotResolveReward(gc);

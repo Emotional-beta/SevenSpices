@@ -50,6 +50,10 @@ public static class RunProgressionTests
         // 本辅助跳过选择，避免伙伴效果改变锅底断言。
         if (gc.IsAwaitingCompanionChoice)
             gc.SkipCompanionChoice();
+
+        // 普通锅结束后商店会营业并门控推进；本辅助跳过，聚焦被测流程。
+        if (gc.IsShopOpen)
+            gc.SkipShop();
     }
 
     /// <summary>用固定数量的糖填满食材篮，使本锅甜味确定性累积。</summary>

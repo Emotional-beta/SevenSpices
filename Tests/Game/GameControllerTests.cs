@@ -61,6 +61,10 @@ public static class GameControllerTests
         // 默认配置下的稀有碗可能产生伙伴候选；本辅助跳过，避免引入伙伴效果干扰断言。
         if (gc.IsAwaitingCompanionChoice)
             gc.SkipCompanionChoice();
+
+        // 普通锅结束后商店会营业并门控推进；本辅助跳过，聚焦被测流程。
+        if (gc.IsShopOpen)
+            gc.SkipShop();
     }
 
     /// <summary>推进 RunController 走完全部9锅普通锅（空锅），进入 Final Pot。</summary>

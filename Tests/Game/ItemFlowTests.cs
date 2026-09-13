@@ -60,6 +60,10 @@ public static class ItemFlowTests
         FinishPotWithoutReward(gc);
         if (gc.IsAwaitingReward)
             gc.ChooseReward(gc.RewardCandidates[0].InstanceId);
+
+        // 普通锅结束后商店会营业并门控推进；本辅助跳过，聚焦被测流程。
+        if (gc.IsShopOpen)
+            gc.SkipShop();
     }
 
     /// <summary>推进 RunController 经过全部普通锅，进入最终锅。</summary>

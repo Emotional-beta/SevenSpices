@@ -30,6 +30,7 @@ public static class TestRunner
         CustomerFlowTests.RunAll();
         RunProgressionTests.RunAll();
         PotRewardTests.RunAll();
+        ShopTests.RunAll();
         EffectSystemTests.RunAll();
         EventBusTests.RunAll();
         PotControllerTests.RunAll();

@@ -33,6 +33,10 @@ public static class PotRewardTests
     static CustomerAppearanceConfig NoRare() =>
         new() { RareBowlNumbers = Array.Empty<int>() };
 
+    /// <summary>关闭商店（陈列数量为 0），使奖励测试不受商店门控影响。</summary>
+    static ShopConfig NoShop() =>
+        new() { IngredientOfferCount = 0, ItemOfferCount = 0 };
+
     /// <summary>用「能选就选、池空就跳」走到当前普通锅 Ended，但<b>不</b>解决奖励。</summary>
     static void FinishPotWithoutReward(GameController gc)
     {
@@ -64,7 +68,7 @@ public static class PotRewardTests
     static void Test_NormalPotEnd_AwaitsReward_And_BlocksAdvance()
     {
         var state = new GameState();
-        var gc = new GameController(state, NoRare(), new Random(101), new PotRewardConfig());
+        var gc = new GameController(state, NoRare(), new Random(101), new PotRewardConfig(), NoShop());
         gc.StartNewGame();
 
         FinishPotWithoutReward(gc);
@@ -85,7 +89,7 @@ public static class PotRewardTests
     static void Test_ChooseReward_AddsToBasket_And_UnlocksAdvance()
     {
         var state = new GameState();
-        var gc = new GameController(state, NoRare(), new Random(102), new PotRewardConfig());
+        var gc = new GameController(state, NoRare(), new Random(102), new PotRewardConfig(), NoShop());
         gc.StartNewGame();
 
         FinishPotWithoutReward(gc);
@@ -110,7 +114,7 @@ public static class PotRewardTests
     static void Test_Reward_GrowsNextPotPool()
     {
         var state = new GameState();
-        var gc = new GameController(state, NoRare(), new Random(103), new PotRewardConfig());
+        var gc = new GameController(state, NoRare(), new Random(103), new PotRewardConfig(), NoShop());
         gc.StartNewGame();
 
         int basketBeforeReward = gc.Player.IngredientBasket.Count;
@@ -161,7 +165,7 @@ public static class PotRewardTests
     {
         var state = new GameState();
         var gc = new GameController(state, NoRare(), new Random(104),
-            new PotRewardConfig { ChoiceCount = 5 });
+            new PotRewardConfig { ChoiceCount = 5 }, NoShop());
         gc.StartNewGame();
 
         FinishPotWithoutReward(gc);
@@ -177,7 +181,7 @@ public static class PotRewardTests
     static void Test_AdvanceBeforeChoose_Throws()
     {
         var state = new GameState();
-        var gc = new GameController(state, NoRare(), new Random(105), new PotRewardConfig());
+        var gc = new GameController(state, NoRare(), new Random(105), new PotRewardConfig(), NoShop());
         gc.StartNewGame();
 
         FinishPotWithoutReward(gc);
@@ -196,7 +200,7 @@ public static class PotRewardTests
     static void Test_InvalidChoice_Throws()
     {
         var state = new GameState();
-        var gc = new GameController(state, NoRare(), new Random(106), new PotRewardConfig());
+        var gc = new GameController(state, NoRare(), new Random(106), new PotRewardConfig(), NoShop());
         gc.StartNewGame();
 
         bool inProgressThrew = false;
@@ -217,7 +221,7 @@ public static class PotRewardTests
     static void Test_FinalPot_NoReward_RunComplete()
     {
         var state = new GameState();
-        var gc = new GameController(state, NoRare(), new Random(107), new PotRewardConfig());
+        var gc = new GameController(state, NoRare(), new Random(107), new PotRewardConfig(), NoShop());
         gc.StartNewGame();
 
         for (int i = 0; i < 9; i++)
@@ -243,7 +247,7 @@ public static class PotRewardTests
     static void Test_ChooseReward_Twice_Throws()
     {
         var state = new GameState();
-        var gc = new GameController(state, NoRare(), new Random(108), new PotRewardConfig());
+        var gc = new GameController(state, NoRare(), new Random(108), new PotRewardConfig(), NoShop());
         gc.StartNewGame();
 
         FinishPotWithoutReward(gc);

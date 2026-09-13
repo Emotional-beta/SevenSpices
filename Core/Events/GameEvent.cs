@@ -2,6 +2,7 @@ using SevenSpices.Core.Companions;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
+using SevenSpices.Core.Shop;
 
 namespace SevenSpices.Core.Events;
 
@@ -188,6 +189,34 @@ public sealed class CompanionAddedEvent : GameEvent
     public CompanionAddedEvent(CompanionInstance companion)
     {
         Companion = companion ?? throw new ArgumentNullException(nameof(companion));
+    }
+}
+
+/// <summary>
+/// 普通锅结束后的商店报价已生成（设计文档 §18）。
+/// <see cref="Offers"/> 是报价列表的复制（独立数组，之后增删报价不影响本事件）；
+/// 但其中的 <see cref="ShopOffer"/> 元素是共享的可变引用，购买后其
+/// <see cref="ShopOffer.IsPurchased"/> 会反映到本事件已携带的报价上。
+/// </summary>
+public sealed class ShopOfferedEvent : GameEvent
+{
+    public IReadOnlyList<ShopOffer> Offers { get; }
+
+    public ShopOfferedEvent(IReadOnlyList<ShopOffer> offers)
+    {
+        ArgumentNullException.ThrowIfNull(offers);
+        Offers = offers.ToArray();
+    }
+}
+
+/// <summary>玩家从商店购买了一件报价（金币已扣除、物品已入账）。</summary>
+public sealed class ShopPurchasedEvent : GameEvent
+{
+    public ShopOffer Offer { get; }
+
+    public ShopPurchasedEvent(ShopOffer offer)
+    {
+        Offer = offer ?? throw new ArgumentNullException(nameof(offer));
     }
 }
 

@@ -8,6 +8,7 @@ using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
 using SevenSpices.Core.Scoring;
+using SevenSpices.Core.Shop;
 
 namespace SevenSpices.Core.Game;
 
@@ -29,6 +30,7 @@ public class GameController
     private readonly EffectSystem _previewEffectSystem = new();
     private readonly CustomerAppearanceConfig _appearance;
     private readonly PotRewardConfig _potReward;
+    private readonly ShopConfig _shopConfig;
     private readonly Random _random;
     private readonly CompanionSystem _companions;
     private PotController? _potController;
@@ -38,16 +40,20 @@ public class GameController
     private bool _rewardResolved;
     private readonly List<CompanionDefinition> _companionCandidates = new();
     private bool _companionResolved;
+    private readonly List<ShopOffer> _shopOffers = new();
+    private bool _shopResolved;
 
     /// <param name="state">可注入已有 GameState（测试 / 存档恢复用）；为空则新建。</param>
     /// <param name="appearance">食客出现机制配置；为空则使用默认配置。</param>
-    /// <param name="random">随机源（食客出现、稀有掉落、锅结束奖励抽取）；为空则使用 <see cref="Random.Shared"/>。</param>
+    /// <param name="random">随机源（食客出现、稀有掉落、锅结束奖励、商店陈列抽取）；为空则使用 <see cref="Random.Shared"/>。</param>
     /// <param name="potReward">锅结束奖励配置（X 选 1）；为空则使用默认配置。</param>
+    /// <param name="shop">商店配置（陈列数量与价格）；为空则使用默认配置。</param>
     public GameController(
         GameState? state = null,
         CustomerAppearanceConfig? appearance = null,
         Random? random = null,
-        PotRewardConfig? potReward = null)
+        PotRewardConfig? potReward = null,
+        ShopConfig? shop = null)
     {
         _state = state ?? new GameState();
         // 伙伴系统复用 PlayerState.Companions 的同一列表，不另存副本；须在 RunController 之前建立。
@@ -57,6 +63,7 @@ public class GameController
         _effectSystem = new EffectSystem(_events);
         _appearance = appearance ?? new CustomerAppearanceConfig();
         _potReward = potReward ?? new PotRewardConfig();
+        _shopConfig = shop ?? new ShopConfig();
         _random = random ?? Random.Shared;
     }
 
@@ -80,20 +87,21 @@ public class GameController
     public bool IsFinalPot => _state.Run.IsFinalPot;
 
     /// <summary>
-    /// 是否允许推进到下一锅：当前普通锅已 Ended，且锅结束奖励与伙伴候选均已处理
+    /// 是否允许推进到下一锅：当前普通锅已 Ended，且锅结束奖励、伙伴候选、商店三道环节均已处理
     /// （已选定/跳过，或本锅本就未产生候选）。
     /// 最终锅只能通过 <see cref="EndCooking"/> 结束整局，不能推进。
     /// <para>
     /// 防御存档恢复：构造函数声明可注入已有 GameState（存档恢复用），此时奖励态与伙伴态字段
     /// 为默认值。若对应环节未产生候选，仅靠 resolved 标志会在恢复后卡死；
-    /// 追加「无候选即放行」可避免这种双 false 软锁。
+    /// 追加「无候选即放行」可避免这种双 false 软锁。商店同理（无报价即放行）。
     /// </para>
     /// </summary>
     public bool CanAdvanceToNextPot =>
         _state.Pot.Phase == PotPhase.Ended
         && !_state.Run.IsFinalPot
         && (_rewardResolved || _rewardCandidates.Count == 0)
-        && (_companionResolved || _companionCandidates.Count == 0);
+        && (_companionResolved || _companionCandidates.Count == 0)
+        && (_shopResolved || _shopOffers.Count == 0);
 
     /// <summary>普通锅结束时的 X 选 1 奖励候选（未进入奖励态时为空）。只读。</summary>
     public IReadOnlyList<IngredientInstance> RewardCandidates => _rewardCandidates;
@@ -133,6 +141,40 @@ public class GameController
 
     /// <summary>是否允许跳过伙伴选择：等待选择时可跳过（候选仍会保留到 resolved 由流程处理）。</summary>
     public bool CanSkipCompanionChoice => IsAwaitingCompanionChoice;
+
+    /// <summary>普通锅结束时的商店报价（未进入商店态时为空）。只读。</summary>
+    public IReadOnlyList<ShopOffer> ShopOffers => _shopOffers;
+
+    /// <summary>
+    /// 是否正在营业：普通锅、锅已 Ended、奖励与伙伴候选均已处理（选定/跳过，或本就无候选）、
+    /// 尚未结算（未跳过）、且有报价。商店是锅结束流程的最后一步：必须在「X 选 1 奖励 + 伙伴候选」
+    /// 之后才开放，避免三道环节同时可用。「无候选即放行」兼容存档恢复。
+    /// </summary>
+    public bool IsShopOpen =>
+        !_state.Run.IsFinalPot
+        && _state.Pot.Phase == PotPhase.Ended
+        && (_rewardResolved || _rewardCandidates.Count == 0)
+        && (_companionResolved || _companionCandidates.Count == 0)
+        && !_shopResolved
+        && _shopOffers.Count > 0;
+
+    /// <summary>兼容别名：语义等同 <see cref="IsShopOpen"/>，供表现层「跳过商店」按钮守卫使用。</summary>
+    public bool CanSkipShop => IsShopOpen;
+
+    /// <summary>
+    /// 是否允许购买指定报价：商店正在营业、索引合法、该件未购买、且金币足够。
+    /// </summary>
+    public bool CanBuy(int offerIndex)
+    {
+        if (!IsShopOpen)
+            return false;
+
+        if (offerIndex < 0 || offerIndex >= _shopOffers.Count)
+            return false;
+
+        var offer = _shopOffers[offerIndex];
+        return !offer.IsPurchased && _state.Player.Gold >= offer.Price;
+    }
 
     /// <summary>整局是否已完成：最终锅已结束。委托领域层，语义等价。最终锅结算前恒为 false。</summary>
     public bool IsRunComplete => _runController.IsRunComplete;
@@ -248,6 +290,10 @@ public class GameController
         // 伙伴候选状态同样按「本锅」重置。
         _companionCandidates.Clear();
         _companionResolved = false;
+
+        // 商店状态同样按「本锅」重置。
+        _shopOffers.Clear();
+        _shopResolved = false;
 
         // 最终锅不逐碗指派食客：整锅由 EndCooking 用占位食客一次性结算。
         if (!_state.Run.IsFinalPot)
@@ -368,6 +414,57 @@ public class GameController
     }
 
     /// <summary>
+    /// 购买指定报价：扣除金币、把食材加入食材篮 / 道具加入道具栏、标记该件已购买，
+    /// 发布 <see cref="ShopPurchasedEvent"/>。只能在 <see cref="CanBuy"/> 为真时调用。
+    /// </summary>
+    public void Buy(int offerIndex)
+    {
+        // 失败原因分开抛出，便于排查（商店未开放 / 索引越界 / 已购买 / 金币不足）。
+        if (!IsShopOpen)
+            throw new InvalidOperationException(
+                $"Cannot buy offer #{offerIndex}: shop is not open " +
+                $"(pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, resolved={_shopResolved}, offers={_shopOffers.Count}).");
+
+        if (offerIndex < 0 || offerIndex >= _shopOffers.Count)
+            throw new ArgumentOutOfRangeException(
+                nameof(offerIndex), offerIndex, $"Offer index out of range (offers={_shopOffers.Count}).");
+
+        var offer = _shopOffers[offerIndex];
+
+        if (offer.IsPurchased)
+            throw new InvalidOperationException(
+                $"Cannot buy offer #{offerIndex}: already purchased.");
+
+        if (_state.Player.Gold < offer.Price)
+            throw new InvalidOperationException(
+                $"Cannot buy offer #{offerIndex}: insufficient gold (gold={_state.Player.Gold}, price={offer.Price}).");
+
+        _state.Player.Gold -= offer.Price;
+
+        if (offer.Kind == ShopOfferKind.Ingredient)
+            _state.Player.IngredientBasket.Add(offer.Ingredient!);
+        else
+            _state.Player.Items.Add(offer.Item!);
+
+        offer.MarkPurchased();
+        _events.Publish(new ShopPurchasedEvent(offer));
+    }
+
+    /// <summary>
+    /// 跳过商店（或不再购买）：标记商店已结算并清空报价，随后允许推进下一锅。
+    /// 只能在 <see cref="CanSkipShop"/> 为真时调用。
+    /// </summary>
+    public void SkipShop()
+    {
+        if (!CanSkipShop)
+            throw new InvalidOperationException(
+                $"Cannot skip shop: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, resolved={_shopResolved}, offers={_shopOffers.Count}.");
+
+        _shopResolved = true;
+        _shopOffers.Clear();
+    }
+
+    /// <summary>
     /// 预测将候选实例投入当前碗后的本碗基础分，不修改任何真实状态。
     /// 可在 IngredientSelection 阶段（悬停候选时）调用。
     /// </summary>
@@ -392,6 +489,8 @@ public class GameController
         _rewardResolved = false;
         _companionCandidates.Clear();
         _companionResolved = false;
+        _shopOffers.Clear();
+        _shopResolved = false;
 
         // 最终锅由 RunController 内部一次性结算；此处只读取已结算的状态发布事件。
         var pot = _state.Pot;
@@ -500,7 +599,30 @@ public class GameController
             if (_companionCandidates.Count == 0)
                 _companionResolved = true;
 
+            // 商店（设计文档 §18）：普通锅结束后陈列随机食材 + 道具，各自互不重复，可跳过。
+            // 此分支只在普通锅走到（最终锅不经 FinishBowl），天然不触发最终锅商店。
+            _shopOffers.Clear();
+            foreach (var ingredient in
+                     IngredientData.CreateRandomInstances(_shopConfig.IngredientOfferCount, _random))
+            {
+                _shopOffers.Add(new ShopOffer(ingredient, _shopConfig.IngredientPrice));
+            }
+
+            foreach (var item in
+                     ItemData.CreateRandomInstances(_shopConfig.ItemOfferCount, _random))
+            {
+                _shopOffers.Add(new ShopOffer(item, _shopConfig.ItemPrice));
+            }
+
+            // 无报价时直接视为已结算，避免卡住推进（与奖励/伙伴兜底同理）。
+            if (_shopOffers.Count == 0)
+                _shopResolved = true;
+
             _events.Publish(new RewardOfferedEvent(_rewardCandidates));
+
+            // 未生成商店（0 报价）时不发布 ShopOfferedEvent：无商店就没有「已开放」的语义。
+            if (_shopOffers.Count > 0)
+                _events.Publish(new ShopOfferedEvent(_shopOffers));
         }
     }
 
