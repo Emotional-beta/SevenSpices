@@ -88,7 +88,7 @@ public class GameController
 
     /// <summary>
     /// 是否允许推进到下一锅：当前普通锅已 Ended，且锅结束奖励、伙伴候选、商店三道环节均已处理
-    /// （已选定/跳过，或本锅本就未产生候选）。
+    /// （已选定/跳过，或本锅本就未产生候选）。三道环节严格串行：奖励 → 伙伴 → 商店。
     /// 最终锅只能通过 <see cref="EndCooking"/> 结束整局，不能推进。
     /// <para>
     /// 防御存档恢复：构造函数声明可注入已有 GameState（存档恢复用），此时奖励态与伙伴态字段
@@ -108,6 +108,7 @@ public class GameController
 
     /// <summary>
     /// 是否正在等待玩家选择锅结束奖励：普通锅、锅已 Ended、尚未选定、且有候选。
+    /// 锅结束流程严格串行：奖励 → 伙伴 → 商店；奖励是第一步，未选定前不提供伙伴 / 商店。
     /// </summary>
     public bool IsAwaitingReward =>
         !_state.Run.IsFinalPot
@@ -128,11 +129,14 @@ public class GameController
     public IReadOnlyList<CompanionDefinition> CompanionCandidates => _companionCandidates;
 
     /// <summary>
-    /// 是否正在等待玩家选择伙伴：普通锅、锅已 Ended、尚未处理（选定/跳过）、且有候选。
+    /// 是否正在等待玩家选择伙伴：普通锅、锅已 Ended、锅结束奖励已处理完（选定/跳过，或本就无候选）、
+    /// 尚未处理（选定/跳过）、且有候选。
+    /// 锅结束流程严格串行：奖励 → 伙伴 → 商店；奖励未处理完之前不提供伙伴选择。
     /// </summary>
     public bool IsAwaitingCompanionChoice =>
         !_state.Run.IsFinalPot
         && _state.Pot.Phase == PotPhase.Ended
+        && (_rewardResolved || _rewardCandidates.Count == 0)
         && !_companionResolved
         && _companionCandidates.Count > 0;
 

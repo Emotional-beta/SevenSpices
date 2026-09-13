@@ -53,6 +53,7 @@ public static class TestRunner
         CompanionSystemTests.RunAll();
         CompanionDataTests.RunAll();
         CompanionFlowTests.RunAll();
+        PotEndSequenceTests.RunAll();
         Console.WriteLine("=== All tests passed. ===");
     }
 }
