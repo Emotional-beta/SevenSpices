@@ -20,6 +20,9 @@ public static class IngredientPoolTests
         Test_ReturnCandidates_AllReturnToPool();
         Test_NoDuplicates_InSingleDraw();
         Test_ExplicitInstanceId_IsPreserved();
+        Test_Draw_UnresolvedSecondDraw_Throws();
+        Test_Draw_AfterConfirm_CanDrawAgain();
+        Test_Draw_EmptyPool_Repeated_DoesNotThrow();
 
         Console.WriteLine("All IngredientPoolTests passed.");
     }
@@ -119,6 +122,15 @@ public static class IngredientPoolTests
 
         pool.ReturnCandidates(candidates);
         Assert(pool.Count == 3, "All candidates should be back after ReturnCandidates");
+
+        // ReturnCandidates 也应解除 pending 守卫：之后可再次 Draw 且返回非空候选。
+        IReadOnlyList<IngredientInstance>? second = null;
+        bool threw = false;
+        try { second = pool.Draw(3); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(!threw, "ReturnCandidates 后再 Draw 不应抛异常");
+        Assert(second != null && second.Count > 0, "ReturnCandidates 后再 Draw 应返回非空候选");
     }
 
     static void Test_NoDuplicates_InSingleDraw()
@@ -145,6 +157,72 @@ public static class IngredientPoolTests
         var def = MakeRice();
         var inst = new IngredientInstance(def, "rice_test_fixed");
         Assert(inst.InstanceId == "rice_test_fixed", "Explicit instanceId must be preserved");
+    }
+
+    /// <summary>上一批候选未 Confirm / ReturnCandidates 时再次 Draw 应抛异常，不再静默丢弃。</summary>
+    static void Test_Draw_UnresolvedSecondDraw_Throws()
+    {
+        var def = MakeRice();
+        var pool = new IngredientPool(new[]
+        {
+            new IngredientInstance(def),
+            new IngredientInstance(def),
+            new IngredientInstance(def),
+            new IngredientInstance(def),
+            new IngredientInstance(def),
+            new IngredientInstance(def),
+        });
+
+        pool.Draw(3);
+
+        bool threw = false;
+        try { pool.Draw(3); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(threw, "未结算候选时二次 Draw 应抛 InvalidOperationException");
+    }
+
+    /// <summary>Confirm 结算后允许再次 Draw。</summary>
+    static void Test_Draw_AfterConfirm_CanDrawAgain()
+    {
+        var def = MakeRice();
+        var pool = new IngredientPool(new[]
+        {
+            new IngredientInstance(def, "rice_a"),
+            new IngredientInstance(def, "rice_b"),
+            new IngredientInstance(def, "rice_c"),
+            new IngredientInstance(def, "rice_d"),
+            new IngredientInstance(def, "rice_e"),
+            new IngredientInstance(def, "rice_f"),
+        });
+
+        var first = pool.Draw(3);
+        pool.Confirm(first, first[0].InstanceId);
+
+        IReadOnlyList<IngredientInstance>? second = null;
+        bool threw = false;
+        try { second = pool.Draw(3); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(!threw, "Confirm 结算后再 Draw 不应抛异常");
+        Assert(second != null && second.Count == 3, "Confirm 后再 Draw 应正常返回候选");
+    }
+
+    /// <summary>池空时连续 Draw 返回空批，不应触发未结算守卫（GameController SkipBowl 路径依赖）。</summary>
+    static void Test_Draw_EmptyPool_Repeated_DoesNotThrow()
+    {
+        var pool = new IngredientPool();
+
+        bool threw = false;
+        try
+        {
+            Assert(pool.Draw(3).Count == 0, "空池首次 Draw 应返回空批");
+            Assert(pool.Draw(3).Count == 0, "空池再次 Draw 应返回空批");
+            Assert(pool.Draw(3).Count == 0, "空池连续 Draw 均应返回空批");
+        }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(!threw, "池空连续 Draw 不应抛 InvalidOperationException");
     }
 
     static void Assert(bool condition, string message)

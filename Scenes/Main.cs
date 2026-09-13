@@ -1,3 +1,4 @@
+using System.Linq;
 using Godot;
 using SevenSpices.Core.Companions;
 using SevenSpices.Core.Content;
@@ -644,7 +645,9 @@ public partial class Main : Node
         try
         {
             _controller.RestoreSave(SaveSerializer.FromJson(json!));
-            SetSaveFeedback("读档完成：已从当前锅开头重新开始。");
+            SetSaveFeedback(_controller.IsRunComplete
+                ? "读档完成：本局已结束。"
+                : "读档完成：已从当前锅开头重新开始。");
             _uiDirty = true;
         }
         catch (Exception ex)
@@ -690,11 +693,26 @@ public partial class Main : Node
         _multiplierLabel.Text = pot.HeatBowlsRemaining > 0 && pot.HeatBonusTiers > 0
             ? $"倍率：×{multiplier}（余温 +{pot.HeatBonusTiers} 档，剩 {pot.HeatBowlsRemaining} 碗）"
             : $"倍率：×{multiplier}";
-        _finalScoreLabel.Text = pot.IsScoreLocked
-            ? $"最终分数：{pot.FinalScore}"
-            : run.IsFinalPot
-                ? "最终分数：（点「结束煮粥」结算）"
-                : "最终分数：（待结算）";
+        if (pot.IsScoreLocked)
+        {
+            _finalScoreLabel.Text = $"最终分数：{pot.FinalScore}";
+        }
+        else if (run.Outcome != RunOutcome.Unsettled)
+        {
+            // 最终锅已结算、但锅状态被重置（读档恢复终局）：从 Boss 记录回读已结算分数。
+            var settledFinal = run.ChapterBossRecords.LastOrDefault(r => r.IsFinalPot);
+            _finalScoreLabel.Text = settledFinal != null
+                ? $"最终分数：{settledFinal.PotTotalFinalScore}（已结算）"
+                : "最终分数：（点「结束煮粥」结算）";
+        }
+        else if (run.IsFinalPot)
+        {
+            _finalScoreLabel.Text = "最终分数：（点「结束煮粥」结算）";
+        }
+        else
+        {
+            _finalScoreLabel.Text = "最终分数：（待结算）";
+        }
         _totalScoreLabel.Text = $"本锅累计基础分：{pot.TotalBaseScore}";
 
         var customer = _controller.CurrentCustomer;
@@ -795,7 +813,7 @@ public partial class Main : Node
             return;
         }
 
-        if (run.IsFinalPot && pot.Phase == PotPhase.Ended)
+        if (run.Outcome != RunOutcome.Unsettled)
         {
             string outcomeText = run.Outcome switch
             {

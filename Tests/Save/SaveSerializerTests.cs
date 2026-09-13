@@ -23,6 +23,8 @@ public static class SaveSerializerTests
         Test_Version_IsOne();
         Test_Apply_IsIdempotent();
         Test_RestoreSave_Integration_RestartsCurrentPot();
+        Test_RestoreSave_AfterFinalSettlement_DoesNotRestartFinalPot();
+        Test_RouteTargetsFinalPot_RoundTrip();
         Test_Corrupt_GarbledJson_Throws();
         Test_Corrupt_MissingIngredientDefinition_Throws();
         Test_Corrupt_UnknownFlavor_Throws();
@@ -33,6 +35,13 @@ public static class SaveSerializerTests
         Test_Corrupt_InvalidVersion_Throws();
         Test_Corrupt_UndefinedEnumValues_Throws();
         Test_Corrupt_ApplyFailure_PreservesExistingState();
+        Test_Corrupt_RunChapterOutOfRange_Throws();
+        Test_Corrupt_RouteActiveChapterOutOfRange_Throws();
+        Test_Corrupt_BossRecordOutOfRange_Throws();
+        Test_Corrupt_FinalPotInconsistent_Throws();
+        Test_Corrupt_NegativeBottomFlavor_Throws();
+        Test_Corrupt_NegativeGold_Throws();
+        Test_BlankRouteId_NormalizedToNull();
         Test_MetaPowder_RoundTrip_And_Cleared();
 
         Console.WriteLine("All SaveSerializerTests passed.");
@@ -290,6 +299,77 @@ public static class SaveSerializerTests
         Assert(gc2.CanSelectIngredient, "读档后应可重新抽取 / 选择食材");
     }
 
+    // ── 4b. 终局存档恢复：已结算完成的最终锅不得被重新开出来 ───────────────────
+
+    /// <summary>
+    /// 最终锅结算（Outcome 落库）后存档再读档：本局应保持完成态、不重开最终锅、Boss 记录不重复。
+    /// </summary>
+    static void Test_RestoreSave_AfterFinalSettlement_DoesNotRestartFinalPot()
+    {
+        var state = new GameState();
+        var gc = new GameController(state);
+        gc.StartNewGame();
+
+        // 直达最终锅并结算。
+        gc.Run.Chapter = RunController.ChaptersPerRun;
+        gc.Run.PotIndex = RunController.PotsPerChapter;
+        gc.Run.IsFinalPot = true;
+        gc.StartCurrentPot();
+        state.Pot.BaseScore = 1;
+        gc.EndCooking();
+
+        Assert(gc.Run.Outcome != RunOutcome.Unsettled,
+            "前置：最终锅结算后 Outcome 不应为 Unsettled");
+        int bossCount = gc.Run.ChapterBossRecords.Count;
+        Assert(bossCount == 1, $"前置：最终锅结算应恰好追加 1 条 Boss 记录，实际 {bossCount}");
+        Assert(gc.IsRunComplete, "前置：最终锅结算后 IsRunComplete 应为 true");
+
+        var save = gc.CaptureSave();
+
+        var target = new GameState();
+        var gc2 = new GameController(target);
+        gc2.RestoreSave(save);
+
+        Assert(gc2.IsRunComplete, "读档后 IsRunComplete 应保持 true");
+        Assert(gc2.Run.IsFinalPot, "读档后应保持最终锅标记");
+        Assert(gc2.Pot.Phase != PotPhase.InProgress,
+            $"读档后最终锅不应被重新开成 InProgress，实际 {gc2.Pot.Phase}");
+        Assert(gc2.Run.Outcome == gc.Run.Outcome, "读档后结局应保持一致");
+        Assert(gc2.Run.ChapterBossRecords.Count == bossCount,
+            $"读档不应重复追加 Boss 记录（期望 {bossCount}，实际 {gc2.Run.ChapterBossRecords.Count}）");
+    }
+
+    // ── 4c. 第 3 章末风潮「目标为最终锅」标记往返 ─────────────────────────────
+
+    /// <summary>
+    /// 第 3 章末选风潮（目标为最终锅）写入的 RouteTargetsFinalPot 应随存档往返保留；
+    /// 该标记只在第 3 章末为真，负样本确认往返不会把它恒真化。
+    /// </summary>
+    static void Test_RouteTargetsFinalPot_RoundTrip()
+    {
+        var state = new GameState();
+        state.Run.RouteId = "trend_sweet";
+        state.Run.RouteActiveChapter = 3;
+        state.Run.RouteTargetsFinalPot = true;
+
+        string json = SaveSerializer.ToJson(SaveSerializer.Capture(state, new MetaState()));
+        var target = new GameState();
+        SaveSerializer.Apply(SaveSerializer.FromJson(json), target, new MetaState());
+
+        Assert(target.Run.RouteId == "trend_sweet",
+            $"往返后 RouteId 应为 trend_sweet，实际 {target.Run.RouteId}");
+        Assert(target.Run.RouteActiveChapter == 3,
+            $"往返后 RouteActiveChapter 应为 3，实际 {target.Run.RouteActiveChapter}");
+        Assert(target.Run.RouteTargetsFinalPot, "往返后 RouteTargetsFinalPot 应保留 true");
+
+        // 负样本：false 往返后仍为 false（证明不是恒 true）。
+        state.Run.RouteTargetsFinalPot = false;
+        json = SaveSerializer.ToJson(SaveSerializer.Capture(state, new MetaState()));
+        var target2 = new GameState();
+        SaveSerializer.Apply(SaveSerializer.FromJson(json), target2, new MetaState());
+        Assert(!target2.Run.RouteTargetsFinalPot, "往返后 RouteTargetsFinalPot 应保留 false");
+    }
+
     // ── 5. 损坏存档显式失败 ───────────────────────────────────────────────────
 
     static void Test_Corrupt_GarbledJson_Throws()
@@ -456,8 +536,158 @@ public static class SaveSerializerTests
         Assert(target.Run.ProfessionId == professionBefore, "失败后职业不应被改写");
     }
 
-    // ── 6. 局外仙丹粉末跨存档往返 ─────────────────────────────────────────────
+    // ── 5b. 非法值尽早失败（不静默钳值） ───────────────────────────────────────
 
+    static void Test_Corrupt_RunChapterOutOfRange_Throws()
+    {
+        var low = new SaveData();
+        low.Run.Chapter = 0;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(low, new GameState(), new MetaState()),
+            "Chapter 低于下界应抛 InvalidDataException");
+
+        var high = new SaveData();
+        high.Run.Chapter = RunController.ChaptersPerRun + 1;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(high, new GameState(), new MetaState()),
+            "Chapter 超过上界应抛 InvalidDataException");
+
+        var potLow = new SaveData();
+        potLow.Run.PotIndex = 0;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(potLow, new GameState(), new MetaState()),
+            "PotIndex 低于下界应抛 InvalidDataException");
+    }
+
+    /// <summary>RouteActiveChapter 只允许 0 或 [1, ChaptersPerRun]；越界应尽早失败且不改目标状态。</summary>
+    static void Test_Corrupt_RouteActiveChapterOutOfRange_Throws()
+    {
+        var high = new SaveData();
+        high.Run.RouteActiveChapter = RunController.ChaptersPerRun + 1;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(high, new GameState(), new MetaState()),
+            "RouteActiveChapter 超过上界应抛 InvalidDataException");
+
+        var low = new SaveData();
+        low.Run.RouteActiveChapter = -1;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(low, new GameState(), new MetaState()),
+            "RouteActiveChapter 为负应抛 InvalidDataException");
+
+        // 目标状态未被修改：越界解析在校验阶段失败，不应提交任何字段。
+        var target = new GameState();
+        target.Run.Chapter = 2;
+        target.Run.PotIndex = 2;
+        target.Run.RouteActiveChapter = 1;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(high, target, new MetaState()),
+            "RouteActiveChapter 越界应抛 InvalidDataException（目标态版本）");
+        Assert(target.Run.Chapter == 2 && target.Run.PotIndex == 2
+               && target.Run.RouteActiveChapter == 1,
+            "RouteActiveChapter 越界时目标状态不应被修改");
+    }
+
+    /// <summary>Boss 记录的 Chapter / PotIndex 越界或 Threshold / PotTotalFinalScore 为负应被拒，且不改目标状态。</summary>
+    static void Test_Corrupt_BossRecordOutOfRange_Throws()
+    {
+        static BossRecordDto Record(int chapter, int potIndex, int threshold, int score) => new()
+        {
+            Chapter = chapter,
+            PotIndex = potIndex,
+            BossId = "taotie_child",
+            BossName = "小饕餮",
+            PotTotalFinalScore = score,
+            Threshold = threshold,
+        };
+
+        var chapterOut = new SaveData();
+        chapterOut.Run.ChapterBossRecords.Add(
+            Record(RunController.ChaptersPerRun + 1, 1, threshold: 1, score: 1));
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(chapterOut, new GameState(), new MetaState()),
+            "Boss 记录 Chapter 越界应抛 InvalidDataException");
+
+        var potOut = new SaveData();
+        potOut.Run.ChapterBossRecords.Add(Record(1, 0, threshold: 1, score: 1));
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(potOut, new GameState(), new MetaState()),
+            "Boss 记录 PotIndex 越界应抛 InvalidDataException");
+
+        var negativeThreshold = new SaveData();
+        negativeThreshold.Run.ChapterBossRecords.Add(Record(1, 1, threshold: -1, score: 1));
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(negativeThreshold, new GameState(), new MetaState()),
+            "Boss 记录 Threshold 为负应抛 InvalidDataException");
+
+        var negativeScore = new SaveData();
+        negativeScore.Run.ChapterBossRecords.Add(Record(1, 1, threshold: 1, score: -1));
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(negativeScore, new GameState(), new MetaState()),
+            "Boss 记录 PotTotalFinalScore 为负应抛 InvalidDataException");
+
+        // 目标状态未被修改：既有 Boss 记录应原封不动。
+        var target = new GameState();
+        target.Run.ChapterBossRecords.Add(new ChapterBossRecord(
+            chapter: 1, potIndex: 1, bossId: "taotie_child", bossName: "小饕餮",
+            satisfied: true, potTotalFinalScore: 100, threshold: 50, isFinalPot: false));
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(potOut, target, new MetaState()),
+            "Boss 记录越界应抛 InvalidDataException（目标态版本）");
+        Assert(target.Run.ChapterBossRecords.Count == 1
+               && target.Run.ChapterBossRecords[0].Threshold == 50
+               && target.Run.ChapterBossRecords[0].BossId == "taotie_child",
+            "Boss 记录越界时目标状态不应被修改");
+    }
+
+    static void Test_Corrupt_FinalPotInconsistent_Throws()
+    {
+        // 默认进度为 (1,1)：标记最终锅但进度不匹配应被拒。
+        var data = new SaveData();
+        data.Run.IsFinalPot = true;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(data, new GameState(), new MetaState()),
+            "最终锅标记与 (1,1) 进度不一致应抛 InvalidDataException");
+
+        // 合法最终锅进度 (3,3) 应通过（负样本对照）。
+        var ok = new SaveData();
+        ok.Run.Chapter = RunController.ChaptersPerRun;
+        ok.Run.PotIndex = RunController.PotsPerChapter;
+        ok.Run.IsFinalPot = true;
+        SaveSerializer.Apply(ok, new GameState(), new MetaState());
+    }
+
+    static void Test_Corrupt_NegativeBottomFlavor_Throws()
+    {
+        var data = new SaveData();
+        data.Bottom.Flavors[FlavorType.Sweet.ToString()] = -1;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(data, new GameState(), new MetaState()),
+            "负锅底值应抛 InvalidDataException（不静默钳 0）");
+    }
+
+    static void Test_Corrupt_NegativeGold_Throws()
+    {
+        var data = new SaveData();
+        data.Player.Gold = -1;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(data, new GameState(), new MetaState()),
+            "负金币应抛 InvalidDataException");
+    }
+
+    /// <summary>空白 RouteId 归一化为 null，与 ProfessionId 一致。</summary>
+    static void Test_BlankRouteId_NormalizedToNull()
+    {
+        var data = new SaveData();
+        data.Run.RouteId = "   ";
+
+        var target = new GameState();
+        SaveSerializer.Apply(data, target, new MetaState());
+
+        Assert(target.Run.RouteId == null,
+            $"空白 RouteId 应归一化为 null，实际 '{target.Run.RouteId}'");
+    }
+
+    // ── 6. 局外仙丹粉末跨存档往返 ─────────────────────────────────────────────
     static void Test_MetaPowder_RoundTrip_And_Cleared()
     {
         var meta = new MetaState();

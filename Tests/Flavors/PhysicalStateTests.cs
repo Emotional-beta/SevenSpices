@@ -27,6 +27,7 @@ public static class PhysicalStateTests
         Test_Odor_Solidified_Immune();
         Test_StatusContainer_Snapshot_And_Reset();
         Test_ClosePot_OdorTransfer_AfterExtract();
+        Test_ClosePot_OdorTransfer_OnlyOnce();
 
         Console.WriteLine("All PhysicalStateTests passed.");
     }
@@ -46,6 +47,14 @@ public static class PhysicalStateTests
             baseScore: baseScore,
             flavors: dict);
         return new IngredientInstance(def);
+    }
+
+    /// <summary>构造一个已激活臭的锅（供现实转移的独立用例，避免跨用例共享标记）。</summary>
+    static PotState MakeOdorPot()
+    {
+        var pot = new PotState();
+        pot.Statuses.Add(PotStatusIds.Odor);
+        return pot;
     }
 
     // ── 1. 通用容器 ───────────────────────────────────────────────────────────
@@ -163,14 +172,11 @@ public static class PhysicalStateTests
     static void Test_Odor_RealityTransfer_TieBreak_And_ExcludeUmami()
     {
         // 并列最弱：酸(0) 声明早于 甜(1)，取酸。
-        var pot = new PotState();
-        pot.Statuses.Add(PotStatusIds.Odor);
-
         var tie = new BottomState();
         tie.SetFlavor(FlavorType.Sour, 3);
         tie.SetFlavor(FlavorType.Sweet, 3);
         tie.SetFlavor(FlavorType.Umami, 1);
-        FlavorStatusRules.ApplyOdorRealityTransfer(pot, tie);
+        FlavorStatusRules.ApplyOdorRealityTransfer(MakeOdorPot(), tie);
 
         Assert(tie.GetFlavor(FlavorType.Sour) == 0, "并列最弱应按枚举声明顺序取酸");
         Assert(tie.GetFlavor(FlavorType.Sweet) == 3, "并列的甜不应被转移");
@@ -179,14 +185,14 @@ public static class PhysicalStateTests
         // 剔除鲜自身：锅底仅鲜 → 不动作（不出现「鲜转给自己」）。
         var onlyUmami = new BottomState();
         onlyUmami.SetFlavor(FlavorType.Umami, 5);
-        FlavorStatusRules.ApplyOdorRealityTransfer(pot, onlyUmami);
+        FlavorStatusRules.ApplyOdorRealityTransfer(MakeOdorPot(), onlyUmami);
         Assert(onlyUmami.GetFlavor(FlavorType.Umami) == 5, "仅剩鲜时现实转移应不动作");
 
         // 鲜与非鲜并存且鲜更弱：仍取最弱非鲜（甜 2）转移。
         var mixed = new BottomState();
         mixed.SetFlavor(FlavorType.Umami, 1);
         mixed.SetFlavor(FlavorType.Sweet, 2);
-        FlavorStatusRules.ApplyOdorRealityTransfer(pot, mixed);
+        FlavorStatusRules.ApplyOdorRealityTransfer(MakeOdorPot(), mixed);
         Assert(mixed.GetFlavor(FlavorType.Sweet) == 0, "最弱非鲜（甜 2）应被转移");
         Assert(mixed.GetFlavor(FlavorType.Umami) == 3, "鲜应增加转移量：1 + 2 = 3");
     }
@@ -282,6 +288,39 @@ public static class PhysicalStateTests
             $"现实转移应在提炼之后：鲜应为 3+3=6，实际 {state.Bottom.GetFlavor(FlavorType.Umami)}");
         Assert(state.Bottom.GetFlavor(FlavorType.Bitter) == 0,
             $"最弱非鲜（苦）应归 0，实际 {state.Bottom.GetFlavor(FlavorType.Bitter)}");
+    }
+
+    /// <summary>
+    /// 臭·现实转移每锅最多一次：重复 ClosePot（提炼会再次写入锅底）不应二次转移。
+    /// </summary>
+    static void Test_ClosePot_OdorTransfer_OnlyOnce()
+    {
+        var state = new GameState();
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+
+        state.Pot.AddFlavor(FlavorType.Umami, 10);
+        state.Pot.AddFlavor(FlavorType.Bitter, 10);
+        FlavorInteractionSystem.Default.Resolve(state.Pot, MakeIngredient(0));
+        Assert(state.Pot.HasOdor, "构造前提：臭应已激活");
+
+        ctrl.EndPot();
+        ctrl.ClosePot();
+
+        // 第一次：提炼 鲜3/苦3 → 现实转移取最弱非鲜（苦）→ 苦0、鲜6。
+        Assert(state.Pot.Statuses.Has(PotStatusIds.OdorTransferred),
+            "第一次现实转移后应留下「已执行」标记");
+        Assert(state.Bottom.GetFlavor(FlavorType.Umami) == 6,
+            $"第一次 ClosePot 后鲜应为 6，实际 {state.Bottom.GetFlavor(FlavorType.Umami)}");
+        Assert(state.Bottom.GetFlavor(FlavorType.Bitter) == 0,
+            $"第一次 ClosePot 后苦应为 0，实际 {state.Bottom.GetFlavor(FlavorType.Bitter)}");
+
+        // 第二次：提炼把苦补回 3、鲜维持 6；现实转移应为 no-op → 苦保持 3（不会被再次清 0）。
+        ctrl.ClosePot();
+        Assert(state.Bottom.GetFlavor(FlavorType.Umami) == 6,
+            $"第二次 ClosePot 不应二次转移：鲜应保持 6，实际 {state.Bottom.GetFlavor(FlavorType.Umami)}");
+        Assert(state.Bottom.GetFlavor(FlavorType.Bitter) == 3,
+            $"第二次 ClosePot 现实转移应 no-op：苦应为第二次提炼的 3，实际 {state.Bottom.GetFlavor(FlavorType.Bitter)}");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

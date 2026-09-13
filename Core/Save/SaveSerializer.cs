@@ -5,6 +5,7 @@ using SevenSpices.Core.Content;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
+using SevenSpices.Core.Run;
 
 namespace SevenSpices.Core.Save;
 
@@ -76,6 +77,7 @@ public static class SaveSerializer
                 IsFinalPot = run.IsFinalPot,
                 RouteId = run.RouteId,
                 RouteActiveChapter = run.RouteActiveChapter,
+                RouteTargetsFinalPot = run.RouteTargetsFinalPot,
                 ProfessionId = run.ProfessionId,
                 IsFailed = run.IsFailed,
                 FailReason = run.FailReason,
@@ -154,11 +156,13 @@ public static class SaveSerializer
             outcome = ParseOutcome(runDto.Outcome);
             ValidateProfessionId(runDto.ProfessionId);
             ValidateRouteId(runDto.RouteId);
+            ValidateRunProgress(runDto);
 
             bossRecords = new List<ChapterBossRecord>(bossRecordsDto.Count);
             foreach (var dto in bossRecordsDto)
             {
                 var record = Require(dto, "Run.ChapterBossRecords[]");
+                ValidateBossRecord(record);
                 bossRecords.Add(new ChapterBossRecord(
                     record.Chapter, record.PotIndex, record.BossId, record.BossName,
                     record.Satisfied, record.PotTotalFinalScore, record.Threshold, record.IsFinalPot));
@@ -176,9 +180,17 @@ public static class SaveSerializer
             foreach (var dto in companionsDto)
                 companions.Add(ToInstance(dto, ResolveCompanionDefinition));
 
+            if (playerDto.Gold < 0)
+                throw new InvalidDataException($"Save Player.Gold {playerDto.Gold} cannot be negative.");
+
             flavors = new List<(FlavorType Flavor, int Value)>(flavorsDto.Count);
             foreach (var (key, value) in flavorsDto)
+            {
+                if (value < 0)
+                    throw new InvalidDataException(
+                        $"Save Bottom.Flavors['{key}'] {value} cannot be negative.");
                 flavors.Add((ParseFlavor(key), value));
+            }
 
             powders = new List<ItemInstance>(powdersDto.Count);
             foreach (var dto in powdersDto)
@@ -214,8 +226,10 @@ public static class SaveSerializer
         run.Chapter = runDto.Chapter;
         run.PotIndex = runDto.PotIndex;
         run.IsFinalPot = runDto.IsFinalPot;
-        run.RouteId = runDto.RouteId;
+        // 空 / 空白风潮 Id 视为「无风潮」，与 ProfessionId 的处理一致。
+        run.RouteId = string.IsNullOrWhiteSpace(runDto.RouteId) ? null : runDto.RouteId;
         run.RouteActiveChapter = runDto.RouteActiveChapter;
+        run.RouteTargetsFinalPot = runDto.RouteTargetsFinalPot;
         // 空 / 空白职业 Id 视为「未指定」（兜底默认职业），避免 Main.OnRestartPressed 传入空串崩溃。
         run.ProfessionId = string.IsNullOrWhiteSpace(runDto.ProfessionId) ? null : runDto.ProfessionId;
         run.IsFailed = runDto.IsFailed;
@@ -268,6 +282,58 @@ public static class SaveSerializer
 
         if (!RouteConfig.TryGet(routeId, out _))
             throw new InvalidDataException($"Save references unknown route '{routeId}'.");
+    }
+
+    /// <summary>
+    /// 校验本局进度字段的合法范围，尽早失败而不是静默钳值。
+    /// 最终锅一致性：<c>IsFinalPot == true</c> 时进度必须为
+    /// (ChaptersPerRun, PotsPerChapter)——推进最终锅时章节不再递增。
+    /// </summary>
+    private static void ValidateRunProgress(RunStateDto runDto)
+    {
+        if (runDto.Chapter < 1 || runDto.Chapter > RunController.ChaptersPerRun)
+            throw new InvalidDataException(
+                $"Save Run.Chapter {runDto.Chapter} is out of range [1, {RunController.ChaptersPerRun}].");
+
+        if (runDto.PotIndex < 1 || runDto.PotIndex > RunController.PotsPerChapter)
+            throw new InvalidDataException(
+                $"Save Run.PotIndex {runDto.PotIndex} is out of range [1, {RunController.PotsPerChapter}].");
+
+        if (runDto.IsFinalPot
+            && (runDto.Chapter != RunController.ChaptersPerRun
+                || runDto.PotIndex != RunController.PotsPerChapter))
+        {
+            throw new InvalidDataException(
+                $"Save marks Final Pot but progress is ({runDto.Chapter},{runDto.PotIndex}); " +
+                $"Final Pot must be ({RunController.ChaptersPerRun},{RunController.PotsPerChapter}).");
+        }
+
+        if (runDto.RouteActiveChapter != 0
+            && (runDto.RouteActiveChapter < 1 || runDto.RouteActiveChapter > RunController.ChaptersPerRun))
+        {
+            throw new InvalidDataException(
+                $"Save Run.RouteActiveChapter {runDto.RouteActiveChapter} is out of range; " +
+                $"expected 0 or [1, {RunController.ChaptersPerRun}].");
+        }
+    }
+
+    private static void ValidateBossRecord(BossRecordDto record)
+    {
+        if (record.Chapter < 1 || record.Chapter > RunController.ChaptersPerRun)
+            throw new InvalidDataException(
+                $"Save Boss record Chapter {record.Chapter} is out of range [1, {RunController.ChaptersPerRun}].");
+
+        if (record.PotIndex < 1 || record.PotIndex > RunController.PotsPerChapter)
+            throw new InvalidDataException(
+                $"Save Boss record PotIndex {record.PotIndex} is out of range [1, {RunController.PotsPerChapter}].");
+
+        if (record.Threshold < 0)
+            throw new InvalidDataException(
+                $"Save Boss record Threshold {record.Threshold} cannot be negative.");
+
+        if (record.PotTotalFinalScore < 0)
+            throw new InvalidDataException(
+                $"Save Boss record PotTotalFinalScore {record.PotTotalFinalScore} cannot be negative.");
     }
 
     // ── DTO ↔ 领域对象 ─────────────────────────────────────────────────────────

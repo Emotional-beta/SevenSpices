@@ -12,6 +12,9 @@ public class IngredientPool
     private readonly List<IngredientInstance> _instances;
     private readonly Random _random;
 
+    /// <summary>已抽出但尚未 Confirm / ReturnCandidates 结算的候选批；null 表示当前无未结算候选。</summary>
+    private List<IngredientInstance>? _pending;
+
     public int Count => _instances.Count;
 
     public IngredientPool(IEnumerable<IngredientInstance>? initial = null, Random? random = null)
@@ -29,7 +32,9 @@ public class IngredientPool
     /// <summary>
     /// 无放回抽取，最多 maxCount 个。不足则全部抽出。
     /// 返回候选列表——调用方必须在选择后调用 Confirm 或 ReturnCandidates。
-    /// 同一时间只允许存在一批未结算候选；在 Confirm/ReturnCandidates 之前再次 Draw 会导致上一批候选丢失。
+    /// 同一时间只允许存在一批未结算候选；上一批未结算（<see cref="Confirm"/> / <see cref="ReturnCandidates"/>
+    /// 之前）再次 Draw 会抛 <see cref="InvalidOperationException"/>，不再静默丢弃上一批候选。
+    /// 池空时抽出的空批不视为未结算候选，不阻塞后续抽取。
     /// <para>
     /// <paramref name="weightSelector"/> 为可选的食材权重函数（路线系统「餐饮风潮」倾斜用）：
     /// 为 null 或权重全等时走原有 <see cref="Random.Next(int)"/> 路径，随机数消耗与旧行为逐位一致；
@@ -40,6 +45,11 @@ public class IngredientPool
         int maxCount = 3,
         Func<IngredientDefinition, double>? weightSelector = null)
     {
+        if (_pending is { Count: > 0 })
+            throw new InvalidOperationException(
+                "Cannot draw: previous candidates are still unresolved. " +
+                "Call Confirm or ReturnCandidates before drawing again.");
+
         if (maxCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxCount), "maxCount must be positive.");
 
@@ -67,6 +77,9 @@ public class IngredientPool
         foreach (var c in candidates)
             _instances.Remove(c);
 
+        // 空批（池空）不算未结算候选，避免池空连续抽时误触发守卫。
+        _pending = candidates.Count > 0 ? candidates : null;
+
         return candidates;
     }
 
@@ -89,6 +102,7 @@ public class IngredientPool
                 _instances.Add(c);
         }
 
+        _pending = null;
         return selected;
     }
 
@@ -100,6 +114,8 @@ public class IngredientPool
         ArgumentNullException.ThrowIfNull(candidates);
         foreach (var c in candidates)
             _instances.Add(c);
+
+        _pending = null;
     }
 
     public IReadOnlyList<IngredientInstance> GetAll() => _instances.AsReadOnly();

@@ -271,9 +271,10 @@ public class GameController
     /// <summary>
     /// 开始一局全新游戏：对同一 <see cref="GameState"/> 反复调用都得到干净新局。
     /// <list type="number">
+    /// <item>先解析本局职业（<paramref name="professionId"/> 为 null 时用 <see cref="ProfessionConfig.Default"/>，
+    /// 非法 Id 立即抛出，保证零副作用）；</item>
     /// <item>回收上一局未使用的仙丹粉末（放回局外 <see cref="Meta"/>，至多 1 个）；</item>
-    /// <item>重置 RunState；</item>
-    /// <item>写入本局职业（<paramref name="professionId"/> 为 null 时用 <see cref="ProfessionConfig.Default"/>）；</item>
+    /// <item>重置 RunState 并写入本局职业；</item>
     /// <item>重置玩家资源（金币 / 食材篮 / 道具 / 伙伴）与锅底，发放职业起始套装；</item>
     /// <item>发放局外保有的 1 份仙丹粉末到本局道具栏；</item>
     /// <item>发布 <see cref="ProfessionChosenEvent"/> 并启动第 1 锅。</item>
@@ -282,13 +283,14 @@ public class GameController
     /// <param name="professionId">本局职业 Id；null 表示使用默认职业。</param>
     public void StartNewGame(string? professionId = null)
     {
-        // 1. 回收上一局未使用的仙丹粉末：局内没用掉的带回局外，供本局再次发放。
-        RecycleImmortalPowders();
-
-        // null → 默认职业兜底；非法 Id 由 ProfessionConfig.Get 抛出（配置错误尽早暴露）。
+        // 0. 先解析职业：null → 默认职业兜底；非法 Id 由 ProfessionConfig.Get 抛出（配置错误尽早暴露）。
+        //    必须在回收仙丹粉末之前，保证非法职业失败时零副作用。
         var profession = professionId is null
             ? ProfessionConfig.Default
             : ProfessionConfig.Get(professionId);
+
+        // 1. 回收上一局未使用的仙丹粉末：局内没用掉的带回局外，供本局再次发放。
+        RecycleImmortalPowders();
 
         _runController.StartRun();
         _state.Run.ProfessionId = profession.Id;
@@ -433,9 +435,9 @@ public class GameController
     /// <list type="number">
     /// <item>先把 DTO 写回 GameState / MetaState（缺 Definition / 非法内容会显式抛异常）；</item>
     /// <item>清空本局运行时状态（候选 / 池 / 奖励 / 伙伴 / 商店 / 路线 / 权重），使后续重建不受旧引用影响；</item>
-    /// <item>未失败则调用 <see cref="StartCurrentPot"/> 从「当前锅开头」重新开始
+    /// <item>未失败、未结算完成则调用 <see cref="StartCurrentPot"/> 从「当前锅开头」重新开始
     /// （锅底、职业起手、风潮权重均按恢复后的 RunState 自动重建）；</item>
-    /// <item>已失败（章末被吞的终局）则不重新开锅，仅恢复终局状态。</item>
+    /// <item>已终止或已结算完成的终局都不重新开锅，仅恢复终局状态。</item>
     /// </list>
     /// 不改变既有 <see cref="StartNewGame"/> 语义。
     /// </summary>
@@ -446,7 +448,8 @@ public class GameController
         SaveSerializer.Apply(data, _state, Meta);
         ResetRuntimeState();
 
-        if (_state.Run.IsFailed)
+        // 已终止（章末被吞）或最终锅已结算完成（Outcome 已落库）都是终局，不得重开锅。
+        if (_state.Run.IsFailed || _state.Run.Outcome != RunOutcome.Unsettled)
         {
             // 终局：不重开锅。清理残余的锅 / 食客运行时状态，避免表现层读到脏数据。
             _state.Pot.Reset();
@@ -494,12 +497,28 @@ public class GameController
 
         _runController.AdvanceToNextPot();
 
-        // 风潮到期：跨过生效章节即失效（不做叠加）。第 9 锅末选择的风潮生效章节 == 最终锅所在章，
-        // 因此推进到最终锅时不会被清除。
-        if (_state.Run.RouteId != null && _state.Run.Chapter > _state.Run.RouteActiveChapter)
+        // 风潮到期 / 目标判定（跨过生效章节即失效，不做叠加）：
+        //  - 进入最终锅：仅保留「第 3 章末选择、目标为最终锅」的风潮（RouteTargetsFinalPot）。
+        //    第 2 章末选择的风潮生效章节同样为 3，但只应作用于第 3 章普通锅，进入最终锅必须清除。
+        //  - 普通锅推进：维持原逻辑，章号已越过生效章节即清除。
+        var run = _state.Run;
+        if (run.RouteId != null)
         {
-            _state.Run.RouteId = null;
-            _state.Run.RouteActiveChapter = 0;
+            if (run.IsFinalPot)
+            {
+                if (!run.RouteTargetsFinalPot)
+                {
+                    run.RouteId = null;
+                    run.RouteActiveChapter = 0;
+                    run.RouteTargetsFinalPot = false;
+                }
+            }
+            else if (run.Chapter > run.RouteActiveChapter)
+            {
+                run.RouteId = null;
+                run.RouteActiveChapter = 0;
+                run.RouteTargetsFinalPot = false;
+            }
         }
 
         StartCurrentPot();
@@ -722,6 +741,9 @@ public class GameController
             run.RouteActiveChapter = run.Chapter < RunController.ChaptersPerRun
                 ? run.Chapter + 1
                 : run.Chapter;
+            // 已是最后一章时生效章节 == 最终锅所在章，目标即最终锅；
+            // 否则（第 1/2 章末）风潮只作用于下一章普通锅。
+            run.RouteTargetsFinalPot = run.Chapter >= RunController.ChaptersPerRun;
             return;
         }
 

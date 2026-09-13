@@ -4,7 +4,7 @@ using SevenSpices.Core.Items;
 namespace SevenSpices.Core.Content;
 
 /// <summary>
-/// 局外（跨局）保留状态。V1 仅进程内存在，无存档支撑（架构文档未实现存档）。
+/// 局外（跨局）保留状态。由 <see cref="SevenSpices.Core.Save.SaveSerializer"/> 持久化到存档，随存档跨局保留。
 /// 由 GameController 外部持有、新局开始时注入。
 /// 当前仅承载 Boss 赏赐「仙丹粉末」，最多保留 <see cref="MaxImmortalPowder"/> 个。
 /// </summary>

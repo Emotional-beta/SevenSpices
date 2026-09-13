@@ -3,6 +3,7 @@ using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Pot;
+using SevenSpices.Core.Run;
 using SevenSpices.Tests.Effects;
 
 namespace SevenSpices.Tests.Pot;
@@ -35,6 +36,8 @@ public static class PreviewIngredientTests
         Test_Preview_MatchesRealExecution_RedDate_ConditionMet();
         Test_Preview_AtIngredientSelection_ReturnsAndDoesNotMutateState();
         Test_Preview_WrongPhase_Throws();
+        Test_Preview_FinalPot_RealizesAgingPool_MatchesEndCooking();
+        Test_Preview_NormalPot_DoesNotRealizeAgingPool();
 
         Console.WriteLine("All PreviewIngredientTests passed.");
     }
@@ -329,6 +332,52 @@ public static class PreviewIngredientTests
         catch (InvalidOperationException) { threw = true; }
 
         Assert(threw, "非 IngredientSelection / IngredientResolve 阶段调用 PreviewIngredient 应抛 InvalidOperationException");
+    }
+
+    // ── E. 最终锅陈酿池兑现（Bug 4 回归） ──────────────────────────────────────
+
+    /// <summary>
+    /// 最终锅带非零陈酿池时，悬停预览应兑现陈酿池，且预测最终分与随后真实 EndCooking 一致。
+    /// </summary>
+    static void Test_Preview_FinalPot_RealizesAgingPool_MatchesEndCooking()
+    {
+        var state = new GameState();
+        var gc = new GameController(state);
+        gc.StartNewGame();
+
+        // 直达最终锅。
+        gc.Run.Chapter = RunController.ChaptersPerRun;
+        gc.Run.PotIndex = RunController.PotsPerChapter;
+        gc.Run.IsFinalPot = true;
+        gc.StartCurrentPot();
+
+        state.Pot.AgingPool = 5.0;
+
+        var candidate = gc.CurrentCandidates[0];
+        var preview = gc.PreviewIngredient(candidate);
+
+        // 真实路径：投入同一候选 → EndCooking（内部先 RealizeAgingPool 再算分）。
+        gc.SelectIngredient(candidate.InstanceId);
+        gc.EndCooking();
+
+        Assert(preview.PreviewFinalScore == state.Pot.FinalScore,
+            $"最终锅预览应兑现陈酿池并与真实结算一致：预览 {preview.PreviewFinalScore}，实际 {state.Pot.FinalScore}");
+    }
+
+    /// <summary>普通锅陈酿只在到期时兑现，预览不得无条件兑现（否则预览分虚高）。</summary>
+    static void Test_Preview_NormalPot_DoesNotRealizeAgingPool()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        state.Pot.AgingPool = 5.0;
+        var inst = IngredientData.CreateInstance("rice"); // BaseScore 1，鲜+1
+        var es = new EffectSystem();
+
+        var preview = ctrl.PreviewIngredient(inst, es);
+
+        Assert(state.Pot.AgingPool == 5.0, "普通锅预览不得兑现真实陈酿池");
+        Assert(state.Pot.BaseScore == 0, "普通锅预览不得修改真实 BaseScore");
+        Assert(preview.PreviewFinalScore == 1,
+            $"普通锅预览不应额外兑现陈酿池：期望 floor((1+1)×0.9×1)=1，实际 {preview.PreviewFinalScore}");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

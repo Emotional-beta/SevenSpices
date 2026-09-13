@@ -17,6 +17,7 @@ public static class FlavorScoreTests
         Test_Enum_OrderAndMembers();
         Test_Rice_FlavorScoreAndBaseScore();
         Test_FlavorWeight_Adjustable();
+        Test_FlavorWeight_UsesInjectedConfigDefault();
         Test_ComputeFinalScore_IncludesFlavorScore();
         Test_PreviewFinalScore_IncludesFlavorScore();
         Test_Reset_ClearsFlavorsAndWeights();
@@ -81,6 +82,23 @@ public static class FlavorScoreTests
         Assert(pot.FlavorScore == 2, "权重提升到 2.0 → FlavorScore 应为 2");
         Assert(pot.GetFlavorWeight(FlavorType.Sweet) == FlavorConfig.Default.DefaultFlavorWeight,
             "未设置权重的味道应返回默认权重");
+    }
+
+    /// <summary>未显式设权重的味道必须按「注入本锅的 Config.DefaultFlavorWeight」计算，而非静态默认。</summary>
+    static void Test_FlavorWeight_UsesInjectedConfigDefault()
+    {
+        var config = new FlavorConfig { DefaultFlavorWeight = 2.5 };
+        var pot = new PotState { Config = config };
+        pot.AddFlavor(FlavorType.Sweet, 3);
+
+        Assert(pot.GetFlavorWeight(FlavorType.Sweet) == 2.5,
+            "未设置权重的味道应返回注入配置的 DefaultFlavorWeight");
+        Assert(pot.FlavorScore == 7.5,
+            "甜 3 × 注入默认权重 2.5 → FlavorScore 应为 7.5");
+
+        pot.SetFlavorWeight(FlavorType.Sweet, 1.0);
+        Assert(pot.GetFlavorWeight(FlavorType.Sweet) == 1.0,
+            "显式设置的权重应覆盖注入配置的默认权重");
     }
 
     static void Test_ComputeFinalScore_IncludesFlavorScore()

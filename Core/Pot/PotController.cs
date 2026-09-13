@@ -89,8 +89,9 @@ public class PotController
     }
 
     /// <summary>
-    /// 开始当前碗：重置碗内分数与锁定状态，进入 BowlPhase.Start。
-    /// 最终锅不重置分数 —— 整锅作为一大碗一次性结算，基础分必须跨碗累积。
+    /// 开始当前碗：重置碗内分数、锁定状态与效果倍率，进入 BowlPhase.Start。
+    /// 效果倍率逐碗复位（冰块等碗内效果不跨碗泄漏）；最终锅除外 ——
+    /// 整锅作为一大碗一次性结算，基础分与效果倍率都必须跨碗累积。
     /// 只能在 PotPhase.InProgress 时调用。
     /// </summary>
     public void StartBowl()
@@ -103,6 +104,7 @@ public class PotController
         {
             pot.BaseScore = 0;
             pot.FinalScore = 0;
+            pot.FinalScoreMultiplier = 1.0;
             pot.IsScoreLocked = false;
         }
 
@@ -199,6 +201,8 @@ public class PotController
         if (pot.CurrentBowlPhase != BowlPhase.IngredientResolve)
             throw new InvalidOperationException(
                 $"Cannot add ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientResolve.");
+        if (pot.IsScoreLocked)
+            throw new InvalidOperationException("Cannot add ingredient: score is already locked.");
 
         double totalBefore = pot.BaseScore + pot.FlavorScore;
         pot.Ingredients.Add(ingredient);
@@ -225,6 +229,11 @@ public class PotController
         var snapshot = PotStateSnapshot.From(pot);
         snapshot.Ingredients.Add(ingredient);
         ApplyIngredientTo(ingredient, snapshot, _gameState, effectSystem);
+
+        // 最终锅在真实结算前会立即兑现陈酿池（设计文档 §24.2 / 架构 §32.6），
+        // 预览必须走同一步，否则预测分系统性偏低。普通锅陈酿只在到期时兑现，不在此无条件 realize。
+        if (snapshot.IsFinalPot)
+            AgingVerb.Realize(snapshot);
 
         return new IngredientPreview(snapshot.BaseScore, ScoreCalculator.ComputeFinalScore(snapshot));
     }

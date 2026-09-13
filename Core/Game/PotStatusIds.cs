@@ -8,4 +8,7 @@ public static class PotStatusIds
 {
     /// <summary>臭（臭豆腐）：本锅「鲜 / 苦」双阈值触发，代价是丰盛倍率失效，锅末触发「现实转移」。</summary>
     public const string Odor = "odor";
+
+    /// <summary>臭·现实转移已在本锅执行过的标记（保证每锅最多一次，重复 ClosePot 不二次转移）。</summary>
+    public const string OdorTransferred = "odor_transferred";
 }

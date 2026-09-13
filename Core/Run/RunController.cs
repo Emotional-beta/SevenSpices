@@ -43,11 +43,14 @@ public class RunController
     public bool IsCurrentPotEnded => _gameState.Pot.Phase == PotPhase.Ended;
 
     /// <summary>
-    /// 整局游戏是否已完成：最终锅已结束，或本局已因章末被嫌弃而终止。
+    /// 整局游戏是否已完成：最终锅已结束，或本局已因章末被嫌弃而终止，
+    /// 或最终锅真身试吃已结算（<see cref="RunState.Outcome"/> 不为 <see cref="RunOutcome.Unsettled"/>）。
+    /// 最后一条用于读档恢复：结局已落库的终局不应被重新开锅为可玩状态。
     /// </summary>
     public bool IsRunComplete =>
         _gameState.Run.IsFailed
-        || (_gameState.Run.IsFinalPot && _gameState.Pot.Phase == PotPhase.Ended);
+        || (_gameState.Run.IsFinalPot && _gameState.Pot.Phase == PotPhase.Ended)
+        || _gameState.Run.Outcome != RunOutcome.Unsettled;
 
     /// <summary>
     /// 开始一局新游戏：将 RunState 重置为初始状态。
@@ -61,6 +64,7 @@ public class RunController
         run.IsFinalPot = false;
         run.RouteId = null;
         run.RouteActiveChapter = 0;
+        run.RouteTargetsFinalPot = false;
         run.ProfessionId = null;
         run.ChapterBossRecords.Clear();
         run.IsFailed = false;

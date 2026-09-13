@@ -144,9 +144,12 @@ public class PotState
         Flavors[flavor] = GetFlavor(flavor) + amount;
     }
 
-    /// <summary>获取指定味道的分值权重，未设置则返回默认权重（1.0）。</summary>
+    /// <summary>
+    /// 获取指定味道的分值权重，未设置则返回本锅注入配置的默认权重
+    /// （<see cref="Config"/> 的 <see cref="FlavorConfig.DefaultFlavorWeight"/>，默认 1.0）。
+    /// </summary>
     public double GetFlavorWeight(FlavorType flavor) =>
-        FlavorWeights.TryGetValue(flavor, out double weight) ? weight : FlavorConfig.Default.DefaultFlavorWeight;
+        FlavorWeights.TryGetValue(flavor, out double weight) ? weight : Config.DefaultFlavorWeight;
 
     /// <summary>设置指定味道的分值权重，最低为 0。</summary>
     public void SetFlavorWeight(FlavorType flavor, double weight) =>

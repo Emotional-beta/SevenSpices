@@ -26,6 +26,8 @@ public static class RouteSystemTests
         Test_ActiveTrend_ExpiresAfterItsChapter();
         Test_SkipRoute_GrantsFallbackReward();
         Test_RouteOfferedAtPots3_6_9();
+        Test_TrendFromChapter2_DoesNotLeakIntoFinalPot();
+        Test_TrendFromChapter3_TargetsFinalPot();
         Test_RouteCandidates_ReproducibleWithFixedSeed();
         Test_R0_NullWeight_MatchesLegacyBehavior();
         Test_R0_WeightedDraw_CanBias();
@@ -87,6 +89,17 @@ public static class RouteSystemTests
             gc.SkipShop();
         if (gc.IsAwaitingRouteChoice)
             gc.SkipRoute();
+    }
+
+    /// <summary>处理锅结束链的前三道环节（奖励 → 伙伴 → 商店），把路线选择留给调用方。</summary>
+    static void ResolvePreRouteChoices(GameController gc)
+    {
+        if (gc.IsAwaitingReward)
+            gc.ChooseReward(gc.RewardCandidates[0].InstanceId);
+        if (gc.IsAwaitingCompanionChoice)
+            gc.SkipCompanionChoice();
+        if (gc.IsShopOpen)
+            gc.SkipShop();
     }
 
     static void Assert(bool condition, string message)
@@ -355,6 +368,87 @@ public static class RouteSystemTests
         // 第 9 锅末结算后推进 → 最终锅。
         gc.AdvanceToNextPot();
         Assert(gc.IsFinalPot, "第 9 锅后应进入最终锅");
+    }
+
+    // ── 6b. 风潮目标：第 2 章末不泄漏进最终锅 / 第 3 章末指向最终锅 ─────────────
+
+    /// <summary>
+    /// 第 2 章末选风潮（生效章节 = 3，只作用于第 3 章普通锅）→ 第 3 章末选保底 →
+    /// 进入最终锅时必须清除，不得让旧风潮倾斜最终锅。
+    /// </summary>
+    static void Test_TrendFromChapter2_DoesNotLeakIntoFinalPot()
+    {
+        var gc = NewController(seed: 8007);
+        gc.StartNewGame();
+
+        // 第 1 章：两锅常规推进，第 3 锅末跳过路线。
+        FinishPot(gc); SettlePot(gc); gc.AdvanceToNextPot(); // (1,2)
+        FinishPot(gc); SettlePot(gc); gc.AdvanceToNextPot(); // (1,3)
+        FinishPot(gc);
+        ResolvePreRouteChoices(gc);
+        Assert(gc.IsAwaitingRouteChoice, "第 1 章末应可選路線");
+        gc.SkipRoute();
+        gc.AdvanceToNextPot(); // (2,1)
+
+        // 第 2 章：两锅常规推进，第 3 锅末选风潮。
+        FinishPot(gc); SettlePot(gc); gc.AdvanceToNextPot(); // (2,2)
+        FinishPot(gc); SettlePot(gc); gc.AdvanceToNextPot(); // (2,3)
+        FinishPot(gc);
+        ResolvePreRouteChoices(gc);
+        Assert(gc.IsAwaitingRouteChoice, "第 2 章末应可選路線");
+        var trend = gc.RouteOffers.First(r => r.Kind == RouteKind.FlavorTrend);
+        gc.ChooseRoute(trend.Id);
+        Assert(gc.Run.RouteId == trend.Id, "第 2 章末選風潮應寫入 RouteId");
+        Assert(gc.Run.RouteActiveChapter == 3, "第 2 章末風潮生效章節應為 3");
+        Assert(!gc.Run.RouteTargetsFinalPot, "第 2 章末風潮目標不應是最終鍋");
+
+        gc.AdvanceToNextPot(); // (3,1)
+        Assert(gc.Run.RouteId == trend.Id, "風潮應保留到第 3 章普通鍋");
+
+        // 第 3 章：两锅常规推进，第 9 锅末選保底（跳過路線），舊風潮仍未被改寫。
+        FinishPot(gc); SettlePot(gc); gc.AdvanceToNextPot(); // (3,2)
+        FinishPot(gc); SettlePot(gc); gc.AdvanceToNextPot(); // (3,3)
+        FinishPot(gc);
+        ResolvePreRouteChoices(gc);
+        Assert(gc.IsAwaitingRouteChoice, "第 3 章末應可選 / 跳路線");
+        gc.SkipRoute();
+        Assert(gc.Run.RouteId == trend.Id, "保底路線不應改寫舊風潮狀態");
+
+        gc.AdvanceToNextPot();
+        Assert(gc.IsFinalPot, "第 3 章末後應進入最終鍋");
+        Assert(gc.Run.RouteId == null, "第 2 章末的舊風潮不應泄漏進最終鍋");
+        Assert(gc.Run.RouteActiveChapter == 0 && !gc.Run.RouteTargetsFinalPot,
+            "清除風潮後生效章節與最終鍋目標標記都應歸零");
+    }
+
+    /// <summary>第 3 章末选风潮：目标即最终锅，推进后应保留且标记为 true。</summary>
+    static void Test_TrendFromChapter3_TargetsFinalPot()
+    {
+        var gc = NewController(seed: 8008);
+        gc.StartNewGame();
+
+        // 前 8 锅常规推进（路线一律跳过，不带风潮）。
+        for (int pot = 1; pot <= 8; pot++)
+        {
+            FinishPot(gc);
+            SettlePot(gc);
+            gc.AdvanceToNextPot();
+        }
+
+        // 第 9 锅（第 3 章末）：选风潮。
+        FinishPot(gc);
+        ResolvePreRouteChoices(gc);
+        Assert(gc.IsAwaitingRouteChoice, "第 3 章末應可選路線");
+        var trend = gc.RouteOffers.First(r => r.Kind == RouteKind.FlavorTrend);
+        gc.ChooseRoute(trend.Id);
+        Assert(gc.Run.RouteId == trend.Id, "第 3 章末選風潮應寫入 RouteId");
+        Assert(gc.Run.RouteTargetsFinalPot, "第 3 章末風潮目標應為最終鍋");
+
+        gc.AdvanceToNextPot();
+        Assert(gc.IsFinalPot, "第 9 鍋後應進入最終鍋");
+        Assert(gc.Run.RouteId == trend.Id, "第 3 章末的風潮應保留到最終鍋");
+        Assert(gc.Run.RouteTargetsFinalPot, "進入最終鍋後目標標記應保持 true");
+        Assert(gc.Run.RouteActiveChapter == 3, "最終鍋風潮生效章節應為 3");
     }
 
     // ── 7. 固定种子可复现候选 ────────────────────────────────────────────────

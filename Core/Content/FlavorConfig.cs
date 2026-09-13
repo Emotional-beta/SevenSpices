@@ -24,7 +24,7 @@ public class FlavorConfig
     /// <summary>苦·陈酿：存入后经过多少次加料到期兑现（占位 3）。</summary>
     public int AgingMatureAdds { get; init; } = 3;
 
-    /// <summary>辣·余温：每次触发消耗的辣值，不足则消耗全部（占位 3）。</summary>
+    /// <summary>辣·余温：每次触发消耗的辣值，不足时不消耗、累积到下次（占位 3）。</summary>
     public int HeatCost { get; init; } = 3;
 
     /// <summary>辣·余温：碗数倍率加成持续的碗数（占位 2）。</summary>

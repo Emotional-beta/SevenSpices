@@ -39,6 +39,9 @@ public sealed class RunStateDto
     public bool IsFinalPot { get; set; }
     public string? RouteId { get; set; }
     public int RouteActiveChapter { get; set; }
+
+    /// <summary>当前风潮是否由第 3 章末的选择写入、目标为最终锅（旧档缺省 false，安全）。</summary>
+    public bool RouteTargetsFinalPot { get; set; }
     public string? ProfessionId { get; set; }
     public bool IsFailed { get; set; }
     public string? FailReason { get; set; }

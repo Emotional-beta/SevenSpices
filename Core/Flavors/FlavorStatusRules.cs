@@ -49,6 +49,10 @@ public static class FlavorStatusRules
     /// 该改写对锅底是永久的（锅底本就跨锅）；臭状态本身随锅（<see cref="PotState.Reset"/> 清空）。
     /// 这是锅底「单调不减」的唯一例外（设计文档 §12.1 边界规则）。
     /// </para>
+    /// <para>
+    /// <b>每锅最多一次</b>：进入判定前先检查 / 写入 <see cref="PotStatusIds.OdorTransferred"/> 标记，
+    /// 无论当次是否真的找到转移目标，第二次调用都是纯 no-op，避免重复 ClosePot 造成二次转移。
+    /// </para>
     /// </summary>
     public static void ApplyOdorRealityTransfer(PotState pot, BottomState bottom)
     {
@@ -61,6 +65,11 @@ public static class FlavorStatusRules
         // 咸·固化：免疫物理改写，跳过现实转移。
         if (pot.IsSolidified)
             return;
+
+        // 每锅最多一次：已执行过（无论当时是否找到目标）则直接 no-op。
+        if (pot.Statuses.Has(PotStatusIds.OdorTransferred))
+            return;
+        pot.Statuses.Add(PotStatusIds.OdorTransferred);
 
         FlavorType? target = null;
         int lowest = int.MaxValue;

@@ -58,6 +58,8 @@ public static class PotControllerTests
         Test_AddIngredient_BaseScoreAndFlavorAndEffect_AllApplied();
         Test_AddIngredient_Honey_FlavorAutoApplied_Then_ScaledEffect();
         Test_AddIngredient_IceCube_MultiplierEffect_FinalScore();
+        Test_AddIngredient_IceCube_Multiplier_ResetsNextBowl();
+        Test_AddIngredient_ScoreLocked_Throws();
         Test_AddIngredient_Egg_UniqueCount_WithAutoApply();
 
         Console.WriteLine("All PotControllerTests passed.");
@@ -768,6 +770,65 @@ public static class PotControllerTests
 
         // Bowl1：floor(10 * 1 * 1.5) = 15
         Assert(state.Pot.FinalScore == 15, "冰块：BaseScore=10, Bowl1 倍率×1, FinalScoreMultiplier=1.5 → FinalScore=15");
+    }
+
+    /// <summary>
+    /// 冰块等「效果倍率」只在当前碗生效：进入下一碗后必须复位为 1.0，
+    /// 第 2 碗的分数不得再乘上第 1 碗遗留的 ×1.5。
+    /// </summary>
+    static void Test_AddIngredient_IceCube_Multiplier_ResetsNextBowl()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        var es = new EffectSystem();
+
+        // 第 1 碗：填充 10 分 + 冰块（×1.5），锁定分数。
+        var filler = new IngredientDefinition("filler", "填充", IngredientRarity.Common, 10);
+        ctrl.AddIngredient(new IngredientInstance(filler), es);
+        ctrl.AddIngredient(IngredientData.CreateInstance("ice_cube"), es);
+
+        Assert(state.Pot.FinalScoreMultiplier == 1.5,
+            "第 1 碗加入冰块后 FinalScoreMultiplier 应为 1.5");
+
+        ctrl.AdvanceBowlPhase(); // → ScoreCalculation
+        ctrl.CalculateScore();
+        Assert(state.Pot.FinalScore == 15, "第 1 碗：floor(10 × 1 × 1.5) = 15");
+
+        while (state.Pot.CurrentBowlPhase != BowlPhase.End)
+            ctrl.AdvanceBowlPhase();
+
+        // 进入第 2 碗：效果倍率必须逐碗复位。
+        ctrl.StartNextBowl();
+        Assert(state.Pot.BowlNumber == 2, "应已进入第 2 碗");
+        Assert(state.Pot.FinalScoreMultiplier == 1.0,
+            "第 2 碗 FinalScoreMultiplier 应复位为 1.0（冰块 ×1.5 不得跨碗泄漏）");
+
+        // 第 2 碗只加 10 分填充食材：倍率复位后应为 10，而非 15。
+        ctrl.AdvanceBowlPhase(); // → Customer
+        ctrl.AdvanceBowlPhase(); // → ItemPhase
+        ctrl.AdvanceBowlPhase(); // → IngredientSelection
+        ctrl.AdvanceBowlPhase(); // → IngredientResolve
+        ctrl.AddIngredient(new IngredientInstance(filler), es);
+        ctrl.AdvanceBowlPhase(); // → ScoreCalculation
+        ctrl.CalculateScore();
+
+        Assert(state.Pot.FinalScore == 10,
+            "第 2 碗分数不应含第 1 碗的 ×1.5：floor(10 × 1 × 1.0) = 10");
+    }
+
+    /// <summary>分数已锁定时再 AddIngredient 应被守卫拦截（规则 §10）。</summary>
+    static void Test_AddIngredient_ScoreLocked_Throws()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state);
+        state.Pot.IsScoreLocked = true;
+        var def = new IngredientDefinition("rice", "米饭", IngredientRarity.Common, 5);
+        var es = new EffectSystem();
+
+        bool threw = false;
+        try { ctrl.AddIngredient(new IngredientInstance(def), es); }
+        catch (InvalidOperationException) { threw = true; }
+
+        Assert(threw, "锁分后 AddIngredient 应抛 InvalidOperationException");
+        Assert(state.Pot.Ingredients.Count == 0, "锁分后失败的 AddIngredient 不得加入食材");
     }
 
     static void Test_AddIngredient_Egg_UniqueCount_WithAutoApply()

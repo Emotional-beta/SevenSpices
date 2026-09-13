@@ -2,6 +2,7 @@ using SevenSpices.Core.Content;
 using SevenSpices.Core.Events;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
+using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
 using SevenSpices.Core.Scoring;
@@ -26,6 +27,7 @@ public static class GameControllerTests
         Test_SelectIngredient_Or_SkipBowl_OutsideSelectionPhase_Throws();
         Test_FinalPot_SelectIngredient_AccumulatesUntilEndCooking();
         Test_EndCooking_NonFinalPot_Throws();
+        Test_StartNewGame_InvalidProfession_DoesNotRecyclePowder();
         Test_FlavorConfig_InjectedThroughGameController_AffectsDuplicate();
 
         Console.WriteLine("All GameControllerTests passed.");
@@ -378,6 +380,27 @@ public static class GameControllerTests
 
         Assert(gc.Pot.GetFlavor(FlavorType.Sweet) == 3,
             $"注入 SweetDuplicateAmount=2 时，糖基础甜 1 + 复制 2 应为 3，实际 {gc.Pot.GetFlavor(FlavorType.Sweet)}");
+    }
+
+    /// <summary>
+    /// 非法职业 Id 应在任何副作用之前失败：Player.Items 中上一局的仙丹粉末不得被回收进 Meta。
+    /// </summary>
+    static void Test_StartNewGame_InvalidProfession_DoesNotRecyclePowder()
+    {
+        var state = new GameState();
+        var meta = new MetaState();
+        var gc = new GameController(state, metaState: meta);
+
+        state.Player.Items.Add(ItemData.CreateImmortalPowder());
+
+        bool threw = false;
+        try { gc.StartNewGame("no_such_profession"); }
+        catch (ArgumentException) { threw = true; }
+
+        Assert(threw, "非法职业 Id 应抛 ArgumentException");
+        Assert(state.Player.Items.Any(i => i.Definition.Id == ItemData.ImmortalPowderId),
+            "非法职业失败后，Player.Items 中的仙丹粉末不应被回收");
+        Assert(meta.ImmortalPowderCount == 0, "非法职业失败后，Meta 不应被写入仙丹粉末");
     }
 
     static void Assert(bool condition, string message)

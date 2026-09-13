@@ -30,6 +30,15 @@ public class RunState
     public int RouteActiveChapter { get; set; }
 
     /// <summary>
+    /// 本局当前风潮是否由「第 3 章末的选择」写入、目标是最终锅。
+    /// <para>
+    /// 用于区分「第 3 章末选风潮」（应保留到最终锅）与「第 2 章末选风潮」（生效章节同样为 3，
+    /// 但只应作用于第 3 章普通锅）。仅当为 true 时，推进到最终锅才保留风潮；否则清除。
+    /// </para>
+    /// </summary>
+    public bool RouteTargetsFinalPot { get; set; }
+
+    /// <summary>
     /// 本局选择的职业 ID（对应 <c>ProfessionConfig</c>）；新局开始时由 GameController 写入，
     /// <c>RunController.StartRun</c> 复位为 null。供起始套装与起手规则读取。
     /// </summary>
