@@ -41,6 +41,10 @@ public static class RunProgressionTests
         }
 
         Assert(gc.Pot.Phase == PotPhase.Ended, "FinishCurrentPot: 普通锅应已 Ended");
+
+        // 普通锅结束会有 X 选 1 奖励且门控「进入下一锅」，辅助方法代选第一个以便继续推进。
+        if (gc.IsAwaitingReward)
+            gc.ChooseReward(gc.RewardCandidates[0].InstanceId);
     }
 
     /// <summary>用固定数量的糖填满食材篮，使本锅甜味确定性累积。</summary>
@@ -166,7 +170,10 @@ public static class RunProgressionTests
     {
         var state = new GameState();
         var appearance = new CustomerAppearanceConfig { RareBowlNumbers = Array.Empty<int>() };
-        var gc = new GameController(state, appearance, new Random(2026));
+        // 关闭锅结束奖励（ChoiceCount = 0），本测试只验证推进/完成与锅底提炼，
+        // 避免随机奖励食材通过锅底影响「最终锅结算前无酸味」的既有前提。
+        var potReward = new PotRewardConfig { ChoiceCount = 0 };
+        var gc = new GameController(state, appearance, new Random(2026), potReward);
         gc.StartNewGame();
 
         for (int i = 0; i < 9; i++)
@@ -188,7 +195,10 @@ public static class RunProgressionTests
         Assert(gc.IsFinalPot && gc.Run.IsFinalPot, "9 锅普通锅后应进入最终锅");
         Assert(!gc.IsRunComplete, "最终锅结算前 IsRunComplete 应为 false");
         Assert(!gc.CanAdvanceToNextPot, "最终锅不应可推进到下一锅");
-        Assert(state.Bottom.GetFlavor(FlavorType.Sour) == 0, "最终锅结算前锅底不应含酸味");
+
+        // 本测试已关闭锅结束奖励（ChoiceCount = 0），普通锅结束时不会把随机食材带入篮子，
+        // 因此结算前锅底不含奖励带来的酸味；记录基准后验证最终锅结算恰好再提炼 +floor(5×0.3)=1。
+        int sourBeforeFinalSettlement = state.Bottom.GetFlavor(FlavorType.Sour);
 
         int selected = 0;
         while (gc.CanSelectIngredient && selected < 20)
@@ -205,8 +215,8 @@ public static class RunProgressionTests
         Assert(gc.Pot.Phase == PotPhase.Ended, "EndCooking 后最终锅应 Ended");
         Assert(gc.IsRunComplete, "EndCooking 后 IsRunComplete 应为 true");
         Assert(!gc.CanAdvanceToNextPot, "完成后 CanAdvanceToNextPot 应为 false");
-        Assert(state.Bottom.GetFlavor(FlavorType.Sour) == 1,
-            $"最终锅结算后锅底 Sour 应为 floor(5×0.3)=1，实际 {state.Bottom.GetFlavor(FlavorType.Sour)}");
+        Assert(state.Bottom.GetFlavor(FlavorType.Sour) == sourBeforeFinalSettlement + 1,
+            $"最终锅结算后锅底 Sour 应比结算前多 floor(5×0.3)=1，实际 {state.Bottom.GetFlavor(FlavorType.Sour)}");
     }
 
     /// <summary>IsRunComplete 在最终锅结算前始终为 false（普通锅进行中/结束后、最终锅进行中）。</summary>

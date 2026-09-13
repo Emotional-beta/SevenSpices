@@ -12,6 +12,8 @@ public partial class Main : Node
     private HBoxContainer _candidateRow = null!;
     private Button _skipBowlButton = null!;
     private Label _poolCountLabel = null!;
+    private VBoxContainer _rewardSection = null!;
+    private HBoxContainer _rewardRow = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
@@ -134,6 +136,21 @@ public partial class Main : Node
         _skipBowlButton.Pressed += OnSkipBowlPressed;
         vbox.AddChild(_skipBowlButton);
 
+        // 普通锅结束后的 X 选 1 食材奖励区域（仅奖励态显示）
+        _rewardSection = new VBoxContainer();
+        _rewardSection.AddThemeConstantOverride("separation", 8);
+        _rewardSection.Visible = false;
+        vbox.AddChild(_rewardSection);
+
+        var rewardTitle = MakeLabel("锅结束奖励：选择 1 个食材", center: true, minHeight: 28);
+        _rewardSection.AddChild(rewardTitle);
+
+        _rewardRow = new HBoxContainer();
+        _rewardRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _rewardRow.AddThemeConstantOverride("separation", 15);
+        _rewardRow.CustomMinimumSize = new Vector2(0, 40);
+        _rewardSection.AddChild(_rewardRow);
+
         // 普通锅结束后的跨锅推进入口
         _nextPotButton = new Button();
         _nextPotButton.Text = "进入下一锅";
@@ -196,6 +213,19 @@ public partial class Main : Node
             previewBaseScore = preview.PreviewBaseScore;
         }
 
+        ShowIngredientTooltip(candidate, previewBaseScore);
+    }
+
+    /// <summary>
+    /// 奖励候选悬停：奖励候选不属于本锅抽取池，不做投入预测，只显示 Definition 详情。
+    /// </summary>
+    private void OnRewardHover(IngredientInstance candidate)
+    {
+        ShowIngredientTooltip(candidate, null);
+    }
+
+    private void ShowIngredientTooltip(IngredientInstance candidate, int? previewBaseScore)
+    {
         _tooltipLabel.Text = BuildIngredientTooltip(candidate.Definition, previewBaseScore);
 
         // 记录鼠标位置（tooltip 偏移显示在鼠标右下方），等下一帧 Size 确定后 clamp
@@ -248,6 +278,19 @@ public partial class Main : Node
             return;
 
         _controller.SelectIngredient(candidate.InstanceId);
+        RefreshUI();
+    }
+
+    /// <summary>
+    /// 锅结束奖励选择：选定后食材进入食材篮，并解除「进入下一锅」的门控。
+    /// 只转发，不做任何流程判断。
+    /// </summary>
+    private void OnRewardPressed(IngredientInstance candidate)
+    {
+        if (!_controller.CanChooseReward)
+            return;
+
+        _controller.ChooseReward(candidate.InstanceId);
         RefreshUI();
     }
 
@@ -322,9 +365,11 @@ public partial class Main : Node
         _poolCountLabel.Text = $"剩余食材池：{_controller.RemainingPoolCount}";
 
         RebuildCandidateButtons();
+        RebuildRewardSection();
 
         bool runComplete = _controller.IsRunComplete;
         _skipBowlButton.Disabled = runComplete || !_controller.CanSkipBowl;
+        // 奖励未选定时 CanAdvanceToNextPot 为 false，「进入下一锅」自动被门控。
         _nextPotButton.Disabled = runComplete || !_controller.CanAdvanceToNextPot;
         _endCookingButton.Disabled = runComplete || !_controller.CanEndCooking;
         _runCompleteLabel.Visible = runComplete;
@@ -354,6 +399,36 @@ public partial class Main : Node
             btn.MouseEntered += () => OnCandidateHover(captured);
             btn.MouseExited += HideTooltip;
             _candidateRow.AddChild(btn);
+        }
+    }
+
+    /// <summary>
+    /// 按当前奖励候选重建锅结束奖励区域（最多 X 个）。
+    /// 表现层只读 RewardCandidates 并点击回调 GameController，不参与任何流程判断。
+    /// </summary>
+    private void RebuildRewardSection()
+    {
+        _rewardSection.Visible = _controller.IsAwaitingReward;
+
+        foreach (Node child in _rewardRow.GetChildren())
+        {
+            _rewardRow.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        if (!_controller.IsAwaitingReward)
+            return;
+
+        foreach (var candidate in _controller.RewardCandidates)
+        {
+            var captured = candidate;
+            var btn = new Button();
+            btn.Text = captured.Definition.Name;
+            btn.CustomMinimumSize = new Vector2(80, 36);
+            btn.Pressed += () => OnRewardPressed(captured);
+            btn.MouseEntered += () => OnRewardHover(captured);
+            btn.MouseExited += HideTooltip;
+            _rewardRow.AddChild(btn);
         }
     }
 

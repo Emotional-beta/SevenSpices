@@ -33,6 +33,9 @@ public static class IngredientDataTests
 
         // Instance 创建
         Test_CreateInstance_ReferencesCorrectDefinition();
+        Test_CreateRandomInstances_CountExceedsRegistry_ReturnsAllUnique();
+        Test_CreateRandomInstances_NonPositive_ReturnsEmpty();
+        Test_CreateRandomInstances_SameSeed_Reproducible();
 
         // 效果行为验证
         Test_RedDate_Effect_SweetGte3_AddsBonus();
@@ -207,6 +210,40 @@ public static class IngredientDataTests
         Assert(ReferenceEquals(inst.Definition, IngredientData.Rice),
             "CreateInstance(\"rice\") 应返回引用 IngredientData.Rice 的实例");
         Assert(inst.InstanceId.Length > 0, "InstanceId 应非空");
+    }
+
+    /// <summary>count 大于定义总数（99）→ 返回全部定义、互不重复、均来自 Registry。</summary>
+    static void Test_CreateRandomInstances_CountExceedsRegistry_ReturnsAllUnique()
+    {
+        var instances = IngredientData.CreateRandomInstances(99, new Random(1));
+        Assert(instances.Count == IngredientData.Registry.GetAll().Count,
+            $"count 超过定义数应返回全部 {IngredientData.Registry.GetAll().Count} 个，实际 {instances.Count}");
+
+        var ids = instances.Select(i => i.Definition.Id).ToList();
+        Assert(ids.Distinct().Count() == ids.Count, "返回的实例应互不重复");
+
+        var legal = IngredientData.Registry.GetAll().Select(d => d.Id).ToHashSet();
+        Assert(ids.All(legal.Contains), "返回的实例应全部来自正式 Registry");
+    }
+
+    /// <summary>count ≤ 0 → 返回空。</summary>
+    static void Test_CreateRandomInstances_NonPositive_ReturnsEmpty()
+    {
+        Assert(IngredientData.CreateRandomInstances(0, new Random(1)).Count == 0,
+            "count=0 应返回空");
+        Assert(IngredientData.CreateRandomInstances(-5, new Random(1)).Count == 0,
+            "count<0 应返回空");
+    }
+
+    /// <summary>固定种子下两次调用结果一致（可复现）。</summary>
+    static void Test_CreateRandomInstances_SameSeed_Reproducible()
+    {
+        var first = IngredientData.CreateRandomInstances(5, new Random(2026))
+            .Select(i => i.Definition.Id).ToList();
+        var second = IngredientData.CreateRandomInstances(5, new Random(2026))
+            .Select(i => i.Definition.Id).ToList();
+
+        Assert(first.SequenceEqual(second), "固定种子下两次调用应完全一致");
     }
 
     // ── 效果行为：红枣 ────────────────────────────────────────────────────────

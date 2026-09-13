@@ -52,6 +52,10 @@ public static class GameControllerTests
                 break;
         }
         Assert(gc.Pot.Phase == PotPhase.Ended, "FinishCurrentPot: 当前锅应已 Ended");
+
+        // 普通锅结束会有 X 选 1 奖励且门控「进入下一锅」，辅助方法代选第一个以便继续推进。
+        if (gc.IsAwaitingReward)
+            gc.ChooseReward(gc.RewardCandidates[0].InstanceId);
     }
 
     /// <summary>推进 RunController 走完全部9锅普通锅（空锅），进入 Final Pot。</summary>

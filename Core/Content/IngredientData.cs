@@ -146,6 +146,31 @@ public static class IngredientData
     }
 
     /// <summary>
+    /// 从正式 Registry 的全部食材中随机抽取 <paramref name="count"/> 个<b>互不重复</b>的
+    /// Definition 创建实例。用于锅结束奖励候选（设计文档 §17）。
+    /// <paramref name="count"/> 超过定义总数时返回全部；<paramref name="count"/> ≤ 0 时返回空。
+    /// </summary>
+    public static IReadOnlyList<IngredientInstance> CreateRandomInstances(int count, Random random)
+    {
+        ArgumentNullException.ThrowIfNull(random);
+
+        var remaining = Registry.GetAll().ToList();
+        int take = Math.Min(count, remaining.Count);
+        if (take <= 0)
+            return Array.Empty<IngredientInstance>();
+
+        var instances = new List<IngredientInstance>(take);
+        for (int i = 0; i < take; i++)
+        {
+            int index = random.Next(remaining.Count);
+            instances.Add(new IngredientInstance(remaining[index]));
+            remaining.RemoveAt(index);
+        }
+
+        return instances;
+    }
+
+    /// <summary>
     /// 创建初始食材篮：5 个米饭 + 1 个职业特殊食材。
     /// 职业系统未实现，暂用 1 个辣椒占位。
     /// </summary>

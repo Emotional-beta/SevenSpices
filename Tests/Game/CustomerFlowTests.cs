@@ -51,6 +51,10 @@ public static class CustomerFlowTests
         }
 
         Assert(gc.Pot.Phase == PotPhase.Ended, "FinishNormalPot: 普通锅应已 Ended");
+
+        // 普通锅结束会有 X 选 1 奖励且门控「进入下一锅」，辅助方法代选第一个以便继续推进。
+        if (gc.IsAwaitingReward)
+            gc.ChooseReward(gc.RewardCandidates[0].InstanceId);
     }
 
     /// <summary>推进恰好一碗（能选就选、池空就跳），供逐碗断言使用。</summary>

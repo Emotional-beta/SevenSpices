@@ -22,23 +22,29 @@ public class GameController
     private readonly RunController _runController;
     private readonly EffectSystem _effectSystem;
     private readonly CustomerAppearanceConfig _appearance;
+    private readonly PotRewardConfig _potReward;
     private readonly Random _random;
     private PotController? _potController;
     private IngredientPool? _pool;
     private readonly List<IngredientInstance> _candidates = new();
+    private readonly List<IngredientInstance> _rewardCandidates = new();
+    private bool _rewardResolved;
 
     /// <param name="state">可注入已有 GameState（测试 / 存档恢复用）；为空则新建。</param>
     /// <param name="appearance">食客出现机制配置；为空则使用默认配置。</param>
-    /// <param name="random">随机源（食客出现、稀有掉落）；为空则使用 <see cref="Random.Shared"/>。</param>
+    /// <param name="random">随机源（食客出现、稀有掉落、锅结束奖励抽取）；为空则使用 <see cref="Random.Shared"/>。</param>
+    /// <param name="potReward">锅结束奖励配置（X 选 1）；为空则使用默认配置。</param>
     public GameController(
         GameState? state = null,
         CustomerAppearanceConfig? appearance = null,
-        Random? random = null)
+        Random? random = null,
+        PotRewardConfig? potReward = null)
     {
         _state = state ?? new GameState();
         _runController = new RunController(_state);
         _effectSystem = new EffectSystem();
         _appearance = appearance ?? new CustomerAppearanceConfig();
+        _potReward = potReward ?? new PotRewardConfig();
         _random = random ?? Random.Shared;
     }
 
@@ -56,11 +62,37 @@ public class GameController
     public bool IsFinalPot => _state.Run.IsFinalPot;
 
     /// <summary>
-    /// 是否允许推进到下一锅：当前锅已 Ended 且不是最终锅。
+    /// 是否允许推进到下一锅：当前普通锅已 Ended，且锅结束奖励已处理
+    /// （已选定，或本锅本就未产生候选）。
     /// 最终锅只能通过 <see cref="EndCooking"/> 结束整局，不能推进。
+    /// <para>
+    /// 防御存档恢复：构造函数声明可注入已有 GameState（存档恢复用），此时奖励态字段
+    /// （_rewardResolved / _rewardCandidates）为默认值。若该锅结束时未产生候选，
+    /// 仅靠 _rewardResolved 会在恢复后卡死；追加「无候选即放行」可避免这种双 false 软锁。
+    /// </para>
     /// </summary>
     public bool CanAdvanceToNextPot =>
-        _state.Pot.Phase == PotPhase.Ended && !_state.Run.IsFinalPot;
+        _state.Pot.Phase == PotPhase.Ended
+        && !_state.Run.IsFinalPot
+        && (_rewardResolved || _rewardCandidates.Count == 0);
+
+    /// <summary>普通锅结束时的 X 选 1 奖励候选（未进入奖励态时为空）。只读。</summary>
+    public IReadOnlyList<IngredientInstance> RewardCandidates => _rewardCandidates;
+
+    /// <summary>
+    /// 是否正在等待玩家选择锅结束奖励：普通锅、锅已 Ended、尚未选定、且有候选。
+    /// </summary>
+    public bool IsAwaitingReward =>
+        !_state.Run.IsFinalPot
+        && _state.Pot.Phase == PotPhase.Ended
+        && !_rewardResolved
+        && _rewardCandidates.Count > 0;
+
+    /// <summary>兼容别名：语义等同 <see cref="IsAwaitingReward"/>，供表现层按钮守卫使用。</summary>
+    public bool CanChooseReward => IsAwaitingReward;
+
+    /// <summary>锅结束奖励的候选数量 X，供 UI 文案使用。</summary>
+    public int RewardChoiceCount => _potReward.ChoiceCount;
 
     /// <summary>整局是否已完成：最终锅已结束。委托领域层，语义等价。最终锅结算前恒为 false。</summary>
     public bool IsRunComplete => _runController.IsRunComplete;
@@ -125,6 +157,10 @@ public class GameController
         _pool = new IngredientPool(_state.Player.IngredientBasket, _random);
         _candidates.Clear();
 
+        // 奖励状态按「本锅」重置：候选与已选定标记都属于上一锅的收尾。
+        _rewardCandidates.Clear();
+        _rewardResolved = false;
+
         // 最终锅不逐碗指派食客：整锅由 EndCooking 用占位食客一次性结算。
         if (!_state.Run.IsFinalPot)
             AssignCustomerForBowl();
@@ -186,6 +222,24 @@ public class GameController
     }
 
     /// <summary>
+    /// 选定普通锅结束奖励：将选中的候选实例直接加入食材篮，成为跨锅可复用资源。
+    /// 只能在 <see cref="CanChooseReward"/> 为真时调用；选定后 <see cref="CanAdvanceToNextPot"/> 才为真。
+    /// </summary>
+    public void ChooseReward(string instanceId)
+    {
+        if (!CanChooseReward)
+            throw new InvalidOperationException(
+                $"Cannot choose reward: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, resolved={_rewardResolved}, candidates={_rewardCandidates.Count}.");
+
+        var chosen = _rewardCandidates.FirstOrDefault(r => r.InstanceId == instanceId)
+            ?? throw new ArgumentException($"Reward candidate '{instanceId}' not found.", nameof(instanceId));
+
+        _state.Player.IngredientBasket.Add(chosen);
+        _rewardCandidates.Clear();
+        _rewardResolved = true;
+    }
+
+    /// <summary>
     /// 预测将候选实例投入当前碗后的本碗基础分，不修改任何真实状态。
     /// 可在 IngredientSelection 阶段（悬停候选时）调用。
     /// </summary>
@@ -204,6 +258,8 @@ public class GameController
         _runController.EndCooking(CustomerData.CreateNormalInstance());
         _candidates.Clear();
         _pool = null;
+        _rewardCandidates.Clear();
+        _rewardResolved = false;
     }
 
     /// <summary>
@@ -258,6 +314,18 @@ public class GameController
             potController.ClosePot();
             _pool = null;
             _candidates.Clear();
+
+            // 普通锅结束奖励（§17）：生成 X 个互不重复的候选，等待玩家选定。
+            // 此分支只在普通锅走到（最终锅不经 FinishBowl），天然不触发最终锅奖励。
+            // 显式清空，不依赖 StartCurrentPot 的隐式重置，保证本处加入前候选必为空。
+            _rewardCandidates.Clear();
+            _rewardCandidates.AddRange(
+                IngredientData.CreateRandomInstances(_potReward.ChoiceCount, _random));
+
+            // 边界兜底：注册表为空导致没有候选时直接视为已选定，避免卡住推进。
+            // Core 层不引入 Godot / 日志，此处静默处理即可。
+            if (_rewardCandidates.Count == 0)
+                _rewardResolved = true;
         }
     }
 
