@@ -21,3 +21,6 @@ obj/
 *.user
 /.claude
 .cptr
+
+# AI 生成美术（立绘 / 概念图 / 风格横比），不入版本库
+generated-images/
