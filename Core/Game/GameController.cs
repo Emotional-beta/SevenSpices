@@ -18,6 +18,11 @@ namespace SevenSpices.Core.Game;
 /// 每锅开始时从「当前食材篮」生成一份本锅可抽池（快照，不修改篮）；
 /// 选中的实例从本锅池移出，未选中的回池；锅结束后本锅池作废，篮不变。
 /// 纯 C#，不依赖 Godot / 场景节点。
+/// <para>
+/// 饕餮 Boss 的章节 / 形态 / 阈值 / 台词 / 赏赐数值集中且唯一源自
+/// <see cref="BossConfig.Default"/>（与 <c>CustomerData</c> / <c>ItemData</c> 一致），
+/// 不通过构造函数注入，避免判定与上报阈值出现双真源。
+/// </para>
 /// </summary>
 public class GameController
 {
@@ -43,6 +48,9 @@ public class GameController
     private bool _companionResolved;
     private readonly List<ShopOffer> _shopOffers = new();
     private bool _shopResolved;
+
+    /// <summary>饕餮 Boss 静态配置的唯一真源（与 CustomerData / ItemData 读取的是同一份）。</summary>
+    private static BossConfig Boss => BossConfig.Default;
 
     /// <param name="state">可注入已有 GameState（测试 / 存档恢复用）；为空则新建。</param>
     /// <param name="appearance">食客出现机制配置；为空则使用默认配置。</param>
@@ -109,6 +117,7 @@ public class GameController
     public bool CanAdvanceToNextPot =>
         _state.Pot.Phase == PotPhase.Ended
         && !_state.Run.IsFinalPot
+        && !_state.Run.IsFailed
         && (_rewardResolved || _rewardCandidates.Count == 0)
         && (_companionResolved || _companionCandidates.Count == 0)
         && (_shopResolved || _shopOffers.Count == 0);
@@ -190,7 +199,7 @@ public class GameController
         return !offer.IsPurchased && _state.Player.Gold >= offer.Price;
     }
 
-    /// <summary>整局是否已完成：最终锅已结束。委托领域层，语义等价。最终锅结算前恒为 false。</summary>
+    /// <summary>整局是否已完成：最终锅已结束，或本局已失败终止。委托领域层，语义等价。</summary>
     public bool IsRunComplete => _runController.IsRunComplete;
 
     /// <summary>
@@ -284,6 +293,12 @@ public class GameController
     /// </summary>
     public void StartCurrentPot()
     {
+        // 防御：本局已终止（章末被嫌弃）时不允许再启动新锅，与 RunController 的失败收口一致。
+        // StartNewGame 会先经 StartRun 清空失败态，因此正常新局不受影响。
+        if (_state.Run.IsFailed)
+            throw new InvalidOperationException(
+                "Cannot start pot: the run has failed. Fresh pot is not allowed after a failed run.");
+
         // 食客状态按「本锅」语义重置：必须在建池 / 指派食客之前。
         _state.Customer.ResetForPot();
 
@@ -325,6 +340,11 @@ public class GameController
     /// </summary>
     public void AdvanceToNextPot()
     {
+        // 防御：本局已终止时不允许推进，与 RunController.AdvanceToNextPot 的失败守卫一致。
+        if (_state.Run.IsFailed)
+            throw new InvalidOperationException(
+                "Cannot advance: the run has failed. Fresh pot is not allowed after a failed run.");
+
         if (!CanAdvanceToNextPot)
             throw new InvalidOperationException(
                 $"Cannot advance to next pot: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}.");
@@ -595,6 +615,19 @@ public class GameController
             _pool = null;
             _candidates.Clear();
 
+            // 本局已终止（章末被饕餮嫌弃吞下）：收口不再产出，避免失败后仍停在候选态。
+            // 清空并置位三道环节（奖励 / 伙伴 / 商店），随后直接返回，不发布任何 Offered 事件。
+            if (_state.Run.IsFailed)
+            {
+                _rewardCandidates.Clear();
+                _rewardResolved = true;
+                _companionCandidates.Clear();
+                _companionResolved = true;
+                _shopOffers.Clear();
+                _shopResolved = true;
+                return;
+            }
+
             // 普通锅结束奖励（§17）：生成 X 个互不重复的候选，等待玩家选定。
             // 此分支只在普通锅走到（最终锅不经 FinishBowl），天然不触发最终锅奖励。
             // 显式清空，不依赖 StartCurrentPot 的隐式重置，保证本处加入前候选必为空。
@@ -660,13 +693,44 @@ public class GameController
     }
 
     /// <summary>
-    /// 按当前碗号为该碗指派食客（普通/稀有由 <see cref="CustomerAppearanceConfig"/> 决定）。
+    /// 按当前碗号为该碗指派食客：先判章末 boss，否则维持普通/稀有逻辑。
     /// 只在普通锅的每碗开始时调用。
     /// </summary>
     private void AssignCustomerForBowl()
+        => CustomerService.AssignCustomer(_state.Customer, ResolveCustomerForBowl());
+
+    /// <summary>
+    /// 章末 Boss 锅：非最终锅 + 本锅是本章最后一锅 + 当前碗 == 本锅最后一碗，
+    /// 由本章对应形态的饕餮顶替普通食客；否则维持既有普通/稀有逻辑（第 5/7 碗稀有行为不变）。
+    /// </summary>
+    private CustomerInstance ResolveCustomerForBowl()
     {
-        var customer = _appearance.CreateCustomerForBowl(_state.Pot.BowlNumber, _random);
-        CustomerService.AssignCustomer(_state.Customer, customer);
+        var form = GetChapterBossFormForCurrentBowl();
+        if (form == null)
+            return _appearance.CreateCustomerForBowl(_state.Pot.BowlNumber, _random);
+
+        var customer = CustomerData.CreateTaotieInstance(form.Id);
+        _events.Publish(new BossEncounteredEvent(
+            form.Id, form.Name, _state.Run.Chapter, _state.Run.PotIndex,
+            _state.Run.IsFinalPot, _state.Pot.BowlNumber));
+        return customer;
+    }
+
+    /// <summary>
+    /// 当前碗是否应指派章末饕餮；命中则返回本章对应形态，否则返回 null。
+    /// 判定全部取自 <see cref="RunController.PotsPerChapter"/> 与 <see cref="BossConfig.Default"/>，不硬编码。
+    /// </summary>
+    private BossFormConfig? GetChapterBossFormForCurrentBowl()
+    {
+        var run = _state.Run;
+        if (run.IsFinalPot || run.IsFailed)
+            return null;
+        if (run.PotIndex != RunController.PotsPerChapter)
+            return null;
+        // 章末试吃＝本章最后一锅的最后一碗（BowlLimit 即本锅碗数：普通锅 10，最终锅 int.MaxValue 但上面已排除）。
+        if (_state.Pot.BowlNumber != _state.Pot.BowlLimit)
+            return null;
+        return Boss.GetChapterForm(run.Chapter);
     }
 
     /// <summary>
@@ -679,6 +743,14 @@ public class GameController
         var customer = _state.Customer.CurrentCustomer;
         if (customer == null)
             return;
+
+        // 章末 Boss（饕餮）走专属结算：不走随机掉落、不发金币。
+        var bossForm = Boss.FindForm(customer.Definition.Id);
+        if (bossForm != null)
+        {
+            ServeBoss(customer, bossForm);
+            return;
+        }
 
         bool isRare = customer.Definition.IsRare;
 
@@ -703,6 +775,45 @@ public class GameController
         _events.Publish(new CustomerServedEvent(customer, goldAwarded));
         if (satisfied)
             _events.Publish(new CustomerSatisfiedEvent(customer));
+    }
+
+    /// <summary>
+    /// 饕餮试吃结算：满意 → 赏赐「仙丹粉末」并存入跨局容器（至多 1 个）；嫌弃 → 本局终止。
+    /// 不走随机掉落（方案 §4.3），也不发金币（饕餮不付钱）。
+    /// </summary>
+    private void ServeBoss(CustomerInstance customer, BossFormConfig form)
+    {
+        var pot = _state.Pot;
+        var run = _state.Run;
+
+        // 复用既有评价：饕餮的满意条件为 PotTotalScoreAtLeast，读的是本锅累计最终分。
+        bool satisfied = CustomerService.EvaluateAndReward(
+            _state.Customer, pot, _state.Player, baseGoldReward: 0);
+
+        run.ChapterBossRecords.Add(new ChapterBossRecord(
+            run.Chapter, run.PotIndex, form.Id, form.Name,
+            satisfied, pot.TotalFinalScore, form.SatisfyThreshold));
+
+        _events.Publish(new CustomerServedEvent(customer, 0));
+
+        bool rewardGranted = false;
+        if (satisfied)
+        {
+            // Boss 专属产出：进跨局容器 MetaState（不进随机掉落 / 商店 / 伙伴）。
+            rewardGranted = Meta.TryAddImmortalPowder(ItemData.CreateImmortalPowder());
+            _events.Publish(new CustomerSatisfiedEvent(customer));
+        }
+        else
+        {
+            _runController.FailRun(Boss.LoseLine);
+        }
+
+        _events.Publish(new BossEvaluatedEvent(
+            form.Id, form.Name, run.Chapter, run.PotIndex, run.IsFinalPot,
+            satisfied, form.SatisfyThreshold, pot.TotalFinalScore, rewardGranted));
+
+        if (!satisfied)
+            _events.Publish(new RunFailedEvent(Boss.LoseLine, run.Chapter, run.PotIndex));
     }
 
     private void DrawCandidates()

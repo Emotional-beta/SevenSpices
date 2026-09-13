@@ -252,7 +252,7 @@ public sealed class CompanionChoiceSkippedEvent : GameEvent
     }
 }
 
-/// <summary>遭遇饕餮（章末或最终锅真身）。只定义，暂不派发。</summary>
+/// <summary>遭遇饕餮（章末 Boss；由 GameController 指派时派发）。</summary>
 public sealed class BossEncounteredEvent : GameEvent
 {
     public string BossId { get; }
@@ -279,7 +279,7 @@ public sealed class BossEncounteredEvent : GameEvent
     }
 }
 
-/// <summary>饕餮试吃判定完成（满意 / 嫌弃）。只定义，暂不派发。</summary>
+/// <summary>饕餮试吃判定完成（满意 / 嫌弃；由 GameController 在章末结算时派发）。</summary>
 public sealed class BossEvaluatedEvent : GameEvent
 {
     public string BossId { get; }
@@ -291,6 +291,9 @@ public sealed class BossEvaluatedEvent : GameEvent
     public int Threshold { get; }
     public int PotTotalFinalScore { get; }
 
+    /// <summary>是否真的发下了赏赐；命中跨局上限（或未满意）时为 false。</summary>
+    public bool RewardGranted { get; }
+
     public BossEvaluatedEvent(
         string bossId,
         string bossName,
@@ -299,7 +302,8 @@ public sealed class BossEvaluatedEvent : GameEvent
         bool isFinalPot,
         bool satisfied,
         int threshold,
-        int potTotalFinalScore)
+        int potTotalFinalScore,
+        bool rewardGranted)
     {
         BossId = bossId ?? throw new ArgumentNullException(nameof(bossId));
         BossName = bossName ?? throw new ArgumentNullException(nameof(bossName));
@@ -309,10 +313,11 @@ public sealed class BossEvaluatedEvent : GameEvent
         Satisfied = satisfied;
         Threshold = threshold;
         PotTotalFinalScore = potTotalFinalScore;
+        RewardGranted = rewardGranted;
     }
 }
 
-/// <summary>本局失败终止（章末被嫌弃吞下）。只定义，暂不派发。</summary>
+/// <summary>本局失败终止（章末被嫌弃吞下；由 GameController 在判定嫌弃时派发）。</summary>
 public sealed class RunFailedEvent : GameEvent
 {
     /// <summary>保底评价文案（如「嫌弃，但是鼓励」）。</summary>

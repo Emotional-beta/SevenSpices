@@ -87,6 +87,9 @@ public class BossConfig
         },
     };
 
+    /// <summary>章末被嫌弃时的保底评价文案（TBD，可调）。</summary>
+    public string LoseLine { get; init; } = "嫌弃，但是鼓励";
+
     /// <summary>全部形态（3 个章末形态 + 真身）。</summary>
     public IEnumerable<BossFormConfig> AllForms => ChapterForms.Append(TrueForm);
 
@@ -100,6 +103,21 @@ public class BossConfig
         }
 
         throw new ArgumentException($"Boss form with Id '{id}' not found.", nameof(id));
+    }
+
+    /// <summary>
+    /// 按 Id 查形态；找不到返回 null。
+    /// 用于判定当前食客是否为饕餮（GameController），区别于「找不到即抛」的 <see cref="GetForm"/>。
+    /// </summary>
+    public BossFormConfig? FindForm(string id)
+    {
+        foreach (var form in AllForms)
+        {
+            if (form.Id == id)
+                return form;
+        }
+
+        return null;
     }
 
     /// <summary>按章节（1-based）取章末形态；越界抛 <see cref="ArgumentOutOfRangeException"/>。</summary>

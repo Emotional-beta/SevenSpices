@@ -16,4 +16,13 @@ public class RunState
 
     /// <summary>当前选择的路线 ID（Phase 4 填充）。</summary>
     public string? RouteId { get; set; }
+
+    /// <summary>章末 Boss（饕餮）验收记录（按触发顺序）。</summary>
+    public List<ChapterBossRecord> ChapterBossRecords { get; } = new();
+
+    /// <summary>本局是否已终止（章末被饕餮嫌弃，失败收口，投胎重来）。</summary>
+    public bool IsFailed { get; set; }
+
+    /// <summary>本局终止原因 / 保底评价文案（未终止时为 null）。</summary>
+    public string? FailReason { get; set; }
 }

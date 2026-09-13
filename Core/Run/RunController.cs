@@ -43,10 +43,11 @@ public class RunController
     public bool IsCurrentPotEnded => _gameState.Pot.Phase == PotPhase.Ended;
 
     /// <summary>
-    /// 整局游戏是否已完成：最终锅已结束。
+    /// 整局游戏是否已完成：最终锅已结束，或本局已因章末被嫌弃而终止。
     /// </summary>
     public bool IsRunComplete =>
-        _gameState.Run.IsFinalPot && _gameState.Pot.Phase == PotPhase.Ended;
+        _gameState.Run.IsFailed
+        || (_gameState.Run.IsFinalPot && _gameState.Pot.Phase == PotPhase.Ended);
 
     /// <summary>
     /// 开始一局新游戏：将 RunState 重置为初始状态。
@@ -59,6 +60,26 @@ public class RunController
         run.PotIndex = 1;
         run.IsFinalPot = false;
         run.RouteId = null;
+        run.ChapterBossRecords.Clear();
+        run.IsFailed = false;
+        run.FailReason = null;
+    }
+
+    /// <summary>
+    /// 本局终止（失败收口）：章末 Boss（饕餮）嫌弃，当场被吞，投胎重来。
+    /// 终止后本局不可再推进锅；调用方据此结束本局。
+    /// </summary>
+    /// <param name="reason">终止原因 / 保底评价文案；空白抛 <see cref="ArgumentException"/>。</param>
+    public void FailRun(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("FailRun reason cannot be empty.", nameof(reason));
+
+        if (_gameState.Run.IsFailed)
+            throw new InvalidOperationException("Cannot fail run: the run has already failed.");
+
+        _gameState.Run.IsFailed = true;
+        _gameState.Run.FailReason = reason;
     }
 
     /// <summary>
@@ -86,6 +107,10 @@ public class RunController
     public void AdvanceToNextPot()
     {
         var run = _gameState.Run;
+        if (run.IsFailed)
+            throw new InvalidOperationException(
+                "Cannot advance: the run has failed. Fresh pot is not allowed after a failed run.");
+
         if (run.IsFinalPot)
             throw new InvalidOperationException(
                 "Cannot advance: already in Final Pot. The run ends when Final Pot is completed.");
@@ -125,6 +150,10 @@ public class RunController
         ItemInstance? rewardItem = null)
     {
         ArgumentNullException.ThrowIfNull(customer);
+
+        if (_gameState.Run.IsFailed)
+            throw new InvalidOperationException(
+                "Cannot end cooking: the run has already failed.");
 
         if (!_gameState.Run.IsFinalPot)
             throw new InvalidOperationException(
