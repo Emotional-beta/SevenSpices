@@ -1,7 +1,6 @@
 using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Flavors;
-using SevenSpices.Core.Flavors.Verbs;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Pot;
@@ -21,11 +20,14 @@ public static class ComplexVerbTests
         Test_FinalPot_EndCooking_RealizesAgingPoolImmediately();
         Test_Heat_ConsumesSpicyAndBoostsMultiplier();
         Test_Heat_DecrementsPerNextBowl_AndDoesNotStack();
+        Test_FinalPot_Heat_DoesNotBoostMultiplier();
         Test_Umami_MultipliesNonUmamiOnly();
         Test_Umami_GrowsWithFlavorTypeCount_AndCaps();
         Test_Salty_Solidifies_AndEtchSkips();
         Test_Salty_SolidifyBeforeEtch_PersistsAcrossBowls();
         Test_Numbing_Resonance_TriggersByPortionAndCap();
+        Test_Numbing_Resonance_TargetsHighestRegisteredFlavor();
+        Test_Numbing_Resonance_NoRegisteredTarget_NoAction();
         Test_Numbing_Resonance_NoInfiniteSelfTrigger();
         Test_Numbing_NotRegisteredAsNormalVerb();
         Test_Preview_MatchesReal_Aging();
@@ -202,6 +204,31 @@ public static class ComplexVerbTests
             "余温用尽后不应再额外加成");
     }
 
+    static void Test_FinalPot_Heat_DoesNotBoostMultiplier()
+    {
+        // 最终锅：StartPot 把 BowlNumber 置为 10（×32），且余温永不递减。
+        var state = new GameState();
+        state.Run.IsFinalPot = true;
+        var ctrl = new PotController(state);
+        ctrl.StartPot();
+        ctrl.StartBowl();
+        ctrl.AdvanceBowlPhase(); // → Customer
+        ctrl.AdvanceBowlPhase(); // → ItemPhase
+        ctrl.AdvanceBowlPhase(); // → IngredientSelection
+        ctrl.AdvanceBowlPhase(); // → IngredientResolve
+
+        state.Pot.AddFlavor(FlavorType.Spicy, 10);
+        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 1)), new EffectSystem());
+
+        Assert(state.Pot.IsFinalPot, "最终锅应标记 IsFinalPot");
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 11, "最终锅不应消耗辣值");
+        Assert(state.Pot.HeatBowlsRemaining == 0 && state.Pot.HeatBonusTiers == 0,
+            "最终锅不应设置余温状态");
+        Assert(ScoreCalculator.GetMultiplier(state.Pot.BowlNumber) == 32, "最终锅基础倍率应为 ×32");
+        Assert(ScoreCalculator.GetEffectiveMultiplier(state.Pot) == 32,
+            "最终锅实际倍率应固定 ×32，不含余温加成");
+    }
+
     // ── 4. 鲜·提鲜 ───────────────────────────────────────────────────────────
 
     static void Test_Umami_MultipliesNonUmamiOnly()
@@ -210,9 +237,9 @@ public static class ComplexVerbTests
         pot.AddFlavor(FlavorType.Umami, 1);
         pot.AddFlavor(FlavorType.Sweet, 4);
 
-        // 加鲜触发提鲜系数刷新（直接 Resolve，不重复应用基础味道）。
+        // 加鲜触发味道互动结算（直接 Resolve，不重复应用基础味道）。
         FlavorInteractionSystem.Default.Resolve(
-            pot, MakeIngredient(0, (FlavorType.Umami, 1)), FlavorConfig.Default);
+            pot, MakeIngredient(0, (FlavorType.Umami, 1)));
 
         AssertClose(pot.UmamiMultiplier, 1.2, "2 种味道 → 系数 1 + 0.2 = 1.2");
         // 鲜自身不乘：1 + 4×1.2 = 5.8（若鲜也乘则为 1.2 + 4.8 = 6.0）。
@@ -221,33 +248,29 @@ public static class ComplexVerbTests
 
     static void Test_Umami_GrowsWithFlavorTypeCount_AndCaps()
     {
+        // 提鲜系数为派生只读：随味道种类数即时变化，无需任何刷新调用。
         // 种类数增长：2 种 → 1.2；3 种 → 1.4。
         var pot = new PotState();
         pot.AddFlavor(FlavorType.Umami, 1);
         pot.AddFlavor(FlavorType.Sweet, 1);
-        UmamiVerb.Recalculate(pot, FlavorConfig.Default);
         AssertClose(pot.UmamiMultiplier, 1.2, "2 种味道 → 1.2");
 
         pot.AddFlavor(FlavorType.Bitter, 1);
-        UmamiVerb.Recalculate(pot, FlavorConfig.Default);
         AssertClose(pot.UmamiMultiplier, 1.4, "3 种味道 → 1.4");
 
         // 封顶。
-        var capped = new PotState();
+        var config = new FlavorConfig { UmamiBonusPerType = 1.0, UmamiMaxMultiplier = 2.0 };
+        var capped = new PotState { Config = config };
         capped.AddFlavor(FlavorType.Umami, 1);
         capped.AddFlavor(FlavorType.Sweet, 1);
         capped.AddFlavor(FlavorType.Bitter, 1);
         capped.AddFlavor(FlavorType.Salty, 1);
-        var config = new FlavorConfig { UmamiBonusPerType = 1.0, UmamiMaxMultiplier = 2.0 };
-        UmamiVerb.Recalculate(capped, config);
         AssertClose(capped.UmamiMultiplier, 2.0, "系数应按 UmamiMaxMultiplier 封顶");
 
-        // 鲜为 0 时复位为 1。
+        // 鲜为 0 时系数为 1。
         var noUmami = new PotState();
         noUmami.AddFlavor(FlavorType.Sweet, 5);
-        noUmami.UmamiMultiplier = 2.0;
-        UmamiVerb.Recalculate(noUmami, FlavorConfig.Default);
-        AssertClose(noUmami.UmamiMultiplier, 1.0, "鲜为 0 时系数应复位为 1");
+        AssertClose(noUmami.UmamiMultiplier, 1.0, "鲜为 0 时系数应为 1");
         AssertClose(noUmami.FlavorScore, 5.0, "鲜为 0 时不应放大其它味道分");
     }
 
@@ -309,20 +332,44 @@ public static class ComplexVerbTests
         var system = SystemWith((FlavorType.Spicy, verb));
 
         // 最高味道辣=5，封顶 3 → 触发 3 次。
-        var pot = new PotState();
+        var pot = new PotState { Config = new FlavorConfig { NumbingResonanceCap = 3 } };
         pot.AddFlavor(FlavorType.Spicy, 5);
-        system.Resolve(pot, MakeIngredient(0, (FlavorType.Numbing, 1)),
-            new FlavorConfig { NumbingResonanceCap = 3 });
+        system.Resolve(pot, MakeIngredient(0, (FlavorType.Numbing, 1)));
         Assert(verb.ApplyCount == 3, $"应按份触发但受封顶限制为 3 次，实际 {verb.ApplyCount}");
 
         // 最高味道辣=2，封顶 10 → 按份触发 2 次。
         var verb2 = new CountingVerb();
         var system2 = SystemWith((FlavorType.Spicy, verb2));
-        var pot2 = new PotState();
+        var pot2 = new PotState { Config = new FlavorConfig { NumbingResonanceCap = 10 } };
         pot2.AddFlavor(FlavorType.Spicy, 2);
-        system2.Resolve(pot2, MakeIngredient(0, (FlavorType.Numbing, 1)),
-            new FlavorConfig { NumbingResonanceCap = 10 });
+        system2.Resolve(pot2, MakeIngredient(0, (FlavorType.Numbing, 1)));
         Assert(verb2.ApplyCount == 2, $"未达封顶时应按最高味道份数触发 2 次，实际 {verb2.ApplyCount}");
+    }
+
+    static void Test_Numbing_Resonance_TargetsHighestRegisteredFlavor()
+    {
+        // 只注册辣；麻值最高但没有普通动词，共振应改取「有注册动词的味道」中的最高（辣 2）。
+        var verb = new CountingVerb();
+        var system = SystemWith((FlavorType.Spicy, verb));
+
+        var pot = new PotState { Config = new FlavorConfig { NumbingResonanceCap = 10 } };
+        pot.AddFlavor(FlavorType.Numbing, 9);
+        pot.AddFlavor(FlavorType.Spicy, 2);
+        system.Resolve(pot, MakeIngredient(0, (FlavorType.Numbing, 1)));
+
+        Assert(verb.ApplyCount == 2,
+            $"共振应在已注册动词的味道中取最高（辣 2）并触发 2 次，实际 {verb.ApplyCount}");
+    }
+
+    static void Test_Numbing_Resonance_NoRegisteredTarget_NoAction()
+    {
+        // 没有任何已注册普通动词 → 共振空转，不抛异常、不改状态。
+        var system = SystemWith();
+        var pot = new PotState();
+        pot.AddFlavor(FlavorType.Numbing, 5);
+        system.Resolve(pot, MakeIngredient(0, (FlavorType.Numbing, 1)));
+
+        Assert(pot.GetFlavor(FlavorType.Numbing) == 5, "无注册动词时共振应空转，麻值不变");
     }
 
     static void Test_Numbing_Resonance_NoInfiniteSelfTrigger()
@@ -331,10 +378,9 @@ public static class ComplexVerbTests
         var verb = new NumbingGrowingVerb();
         var system = SystemWith((FlavorType.Spicy, verb));
 
-        var pot = new PotState();
+        var pot = new PotState { Config = new FlavorConfig { NumbingResonanceCap = 3 } };
         pot.AddFlavor(FlavorType.Spicy, 3);
-        system.Resolve(pot, MakeIngredient(0, (FlavorType.Numbing, 1)),
-            new FlavorConfig { NumbingResonanceCap = 3 });
+        system.Resolve(pot, MakeIngredient(0, (FlavorType.Numbing, 1)));
 
         Assert(verb.ApplyCount == 3, $"共振应有限触发（封顶 3），实际 {verb.ApplyCount}");
         Assert(pot.GetFlavor(FlavorType.Numbing) == 3, "每次触发独立 +1 麻，且不再递归共振");
@@ -404,7 +450,6 @@ public static class ComplexVerbTests
         state.Pot.IsSolidified = true;
         state.Pot.HeatBowlsRemaining = 1;
         state.Pot.HeatBonusTiers = 1;    // 第1碗 ×1 + 1 档 = ×2
-        state.Pot.UmamiMultiplier = 1.0;
 
         var preview = ctrl.PreviewIngredient(MakeIngredient(2), new EffectSystem());
 

@@ -62,7 +62,7 @@ public static class FlavorVerbTests
         {
             ApplyCount++;
             // 重入调用应被 FlavorInteractionSystem 直接跳过，不得再次进入本动词。
-            System?.Resolve(context.Pot, context.Source, context.Config);
+            System?.Resolve(context.Pot, context.Source);
             context.Pot.AddFlavor(context.Flavor, 1);
         }
     }
@@ -112,14 +112,15 @@ public static class FlavorVerbTests
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.AddFlavor(FlavorType.Spicy, 3);
         state.Pot.AddFlavor(FlavorType.Umami, 1);
-        double before = state.Pot.FlavorScore; // 3 + 1 = 4
 
         ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Sour, 1)), new EffectSystem());
 
         Assert(state.Pot.GetFlavor(FlavorType.Sour) == 2, "酸应变为 2（自身 +1，再蚀入鲜 1）");
         Assert(state.Pot.GetFlavor(FlavorType.Umami) == 0, "最低非零其他味道（鲜 1）应被蚀为 0");
         Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 3, "辣 3 不应被改动");
-        Assert(state.Pot.FlavorScore == before + 1, "蚀刻把鲜转移到酸，味道分净变化应为 +1");
+        // 提鲜系数为派生只读：鲜被蚀为 0 后提鲜失效，味道分 = 酸 2 + 辣 3 = 5.0。
+        Assert(state.Pot.FlavorScore == 5.0,
+            $"蚀刻把鲜转移到酸并使提鲜随之失效，味道分应为 5.0，实际 {state.Pot.FlavorScore}");
     }
 
     // ── 2. 酸·蚀刻边界 ───────────────────────────────────────────────────────
@@ -223,12 +224,12 @@ public static class FlavorVerbTests
 
     static void Test_Duplicate_ConfigAmount_Adjustable()
     {
-        var pot = new PotState();
+        var pot = new PotState { Config = new FlavorConfig { SweetDuplicateAmount = 2 } };
         pot.AddFlavor(FlavorType.Sweet, 2); // 模拟基础味道已应用（已有 1 + 本次 1）
         var added = MakeIngredient(0, (FlavorType.Sweet, 1));
-        var config = new FlavorConfig { SweetDuplicateAmount = 2 };
 
-        FlavorInteractionSystem.Default.Resolve(pot, added, config);
+        // 配置从 pot.Config 读取（统一来源）。
+        FlavorInteractionSystem.Default.Resolve(pot, added);
 
         Assert(pot.GetFlavor(FlavorType.Sweet) == 4, "复制份数配置为 2 时甜应为 2 + 2 = 4");
     }
@@ -297,7 +298,7 @@ public static class FlavorVerbTests
         pot.AddFlavor(FlavorType.Sour, 1); // 模拟基础味道已应用
         var added = MakeIngredient(0, (FlavorType.Sour, 1));
 
-        system.Resolve(pot, added, FlavorConfig.Default);
+        system.Resolve(pot, added);
 
         Assert(verb.ApplyCount == 1, $"重入应被跳过，动词只应执行 1 次，实际 {verb.ApplyCount}");
         Assert(pot.GetFlavor(FlavorType.Sour) == 2, "外层动词只应 +1：酸应为 2");

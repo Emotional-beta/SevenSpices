@@ -56,6 +56,8 @@ public class PotController
 
         // F4：把本锅生效的配置注入 PotState，使结算 / 预览 / 动词超频读取同一份配置。
         pot.Config = _flavorConfig;
+        // 记录最终锅标记：HeatVerb / ScoreCalculator 据此跳过余温（设计文档 §24.2）。
+        pot.IsFinalPot = _gameState.Run.IsFinalPot;
 
         if (_gameState.Run.IsFinalPot)
         {
@@ -231,7 +233,8 @@ public class PotController
 
         // 味道互动层：在基础味道应用后、食材特殊效果前结算（设计文档 §七 / §11.1）。
         // baseScore 为本次加料的基础分增量，供苦·陈酿按比例存入陈酿池。
-        _flavorInteraction.Resolve(pot, ingredient, _flavorConfig, baseScore);
+        // 配置由互动层从 pot.Config 读取（StartPot 已注入 _flavorConfig），不再外传。
+        _flavorInteraction.Resolve(pot, ingredient, baseScore);
 
         var context = new EffectContext(pot.BowlNumber, gameState, pot, ingredient);
         effectSystem.TriggerAll(ingredient.Definition.Effects, ingredient.InstanceId, context);

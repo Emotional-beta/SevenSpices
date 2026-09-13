@@ -15,7 +15,8 @@ namespace SevenSpices.Core.Flavors;
 /// <item>按 <see cref="FlavorType"/> 声明顺序遍历：酸 → 甜 → 苦 → 辣 → 鲜 → 咸 → 麻。</item>
 /// <item>每种味道的动词每次加料最多结算一次；未注册动词的味道直接跳过。</item>
 /// <item>动词结算后，作为独立步骤执行麻·共振（麻自身不注册普通动词）。</item>
-/// <item>苦·陈酿的增长 / 到期、鲜·提鲜的系数刷新也在每次加料后统一推进，保证预览一致。</item>
+/// <item>苦·陈酿的增长 / 到期也在每次加料后统一推进，保证预览一致。</item>
+/// <item>提鲜系数已改为 PotState 的派生只读属性，无需在加料后刷新。</item>
 /// </list>
 /// </para>
 /// <para>
@@ -52,15 +53,18 @@ public class FlavorInteractionSystem
     /// <summary>
     /// 在加料瞬间结算味道互动层。
     /// 调用方须先应用食材基础分与基础味道值，再调用本方法；食材自身特殊效果应在之后触发。
+    /// <para>
+    /// 配置一律从 <see cref="PotState.Config"/> 读取（由 PotController / RunController 在开锅时注入），
+    /// 不再接受外部 config 参数，避免「惰性恢复路径」下外部配置与锅上配置不一致导致漂移。
+    /// </para>
     /// </summary>
     /// <param name="baseScoreAdded">
     /// 本次加料对基础分的增量（已含伙伴等修正），供苦·陈酿按比例存入。默认 0。
     /// </param>
-    public void Resolve(PotState pot, IngredientInstance added, FlavorConfig config, int baseScoreAdded = 0)
+    public void Resolve(PotState pot, IngredientInstance added, int baseScoreAdded = 0)
     {
         ArgumentNullException.ThrowIfNull(pot);
         ArgumentNullException.ThrowIfNull(added);
-        ArgumentNullException.ThrowIfNull(config);
 
         // 防重入：重入调用直接跳过，避免递归结算 / 状态半更新。
         if (_resolving)
@@ -69,6 +73,8 @@ public class FlavorInteractionSystem
         _resolving = true;
         try
         {
+            var config = pot.Config;
+
             // 第 2 步：物理状态检查（如「臭」）。必须早于味道动词结算（设计文档 §11.1）。
             FlavorStatusRules.CheckPhysicalStates(pot, config);
 
@@ -81,18 +87,15 @@ public class FlavorInteractionSystem
                 if (!increased.Contains(flavor))
                     continue;
 
-                ApplyVerbSafe(flavor, pot, added, config, baseScoreAdded);
+                ApplyVerbSafe(flavor, pot, added, baseScoreAdded);
             }
-
-            // 鲜·提鲜：系数是当前味道种类数的函数，每次加料后刷新（幂等）。
-            UmamiVerb.Recalculate(pot, config);
 
             // 苦·陈酿：每次加料推进池的增长 / 到期判定（存入由苦动词完成）。
             AgingVerb.AdvanceCycle(pot, config);
 
             // 第 4 步：麻·共振（作为独立步骤，在动词结算之后）。
             if (increased.Contains(FlavorType.Numbing))
-                ApplyResonance(pot, added, config);
+                ApplyResonance(pot, added);
         }
         finally
         {
@@ -103,16 +106,16 @@ public class FlavorInteractionSystem
     /// <summary>
     /// 结算单个味道的动词：未注册 / 抛异常时静默跳过，绝不影响其余味道与核心流程。
     /// 直接调用动词（不走 <see cref="Resolve"/>），因此天然绕过防重入守卫，供共振与主循环共用。
+    /// 动词上下文中的配置取自 <see cref="PotState.Config"/>。
     /// </summary>
-    private bool ApplyVerbSafe(
-        FlavorType flavor, PotState pot, IngredientInstance added, FlavorConfig config, int baseScoreAdded)
+    private bool ApplyVerbSafe(FlavorType flavor, PotState pot, IngredientInstance added, int baseScoreAdded)
     {
         if (!_verbs.TryGetValue(flavor, out var verb))
             return false;
 
         try
         {
-            verb.Apply(new FlavorContext(pot, added, flavor, config, baseScoreAdded));
+            verb.Apply(new FlavorContext(pot, added, flavor, pot.Config, baseScoreAdded));
         }
         catch
         {
@@ -123,21 +126,26 @@ public class FlavorInteractionSystem
     }
 
     /// <summary>
-    /// 麻·共振：取当前最高味道（并列取枚举最早），按其份数（封顶
-    /// <see cref="FlavorConfig.NumbingResonanceCap"/>）再触发该味道的动词 N 次。
+    /// 麻·共振：在<b>已注册普通动词</b>的味道中取当前最高（并列取枚举最早），
+    /// 按其份数（封顶 <see cref="FlavorConfig.NumbingResonanceCap"/>）再触发该味道的动词 N 次。
     /// <para>
+    /// 麻自身不注册普通动词，故天然不会被选为目标；若没有任何已注册动词的味道则空转。
     /// 每次调用都直接调动词（不经 <see cref="Resolve"/>），故不会递归回共振步骤，
     /// 配合封顶天然不会无限自我触发（设计文档 §11.1）。共振触发的基础分增量为 0。
     /// </para>
     /// </summary>
-    private void ApplyResonance(PotState pot, IngredientInstance added, FlavorConfig config)
+    private void ApplyResonance(PotState pot, IngredientInstance added)
     {
         FlavorType target = default;
         int highest = 0;
 
         // Enum.GetValues 按声明顺序返回；仅在严格更大时更新，故并列时保留最早的一个。
+        // 只考虑已注册普通动词的味道，避免目标为麻等无动词味道而空转。
         foreach (FlavorType flavor in Enum.GetValues<FlavorType>())
         {
+            if (!_verbs.ContainsKey(flavor))
+                continue;
+
             int value = pot.GetFlavor(flavor);
             if (value > highest)
             {
@@ -149,9 +157,9 @@ public class FlavorInteractionSystem
         if (highest <= 0)
             return;
 
-        int triggers = Math.Min(highest, config.NumbingResonanceCap);
+        int triggers = Math.Min(highest, pot.Config.NumbingResonanceCap);
         for (int i = 0; i < triggers; i++)
-            ApplyVerbSafe(target, pot, added, config, baseScoreAdded: 0);
+            ApplyVerbSafe(target, pot, added, baseScoreAdded: 0);
     }
 
     private static HashSet<FlavorType> GetIncreasedFlavors(IngredientInstance added)

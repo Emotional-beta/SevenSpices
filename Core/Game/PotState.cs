@@ -16,6 +16,12 @@ public class PotState
     public int BowlLimit { get; set; } = 10;
 
     /// <summary>
+    /// 本锅是否为最终锅。最终锅整锅一次性结算（固定 ×32 档位），辣·余温对其不生效。
+    /// 由 PotController.StartPot 依据 RunState 注入，<see cref="Reset"/> 复位为 false。
+    /// </summary>
+    public bool IsFinalPot { get; set; }
+
+    /// <summary>
     /// 本锅生效的味道系统可调数值配置（开锅时由 PotController / RunController 注入，默认
     /// <see cref="FlavorConfig.Default"/>）。挂在 PotState 上使结算与预览读取同一份配置，
     /// 避免公式漂移；已纳入快照（PotStateSnapshot）与 <see cref="Reset"/>。
@@ -80,8 +86,24 @@ public class PotState
     /// <summary>辣·余温：碗数倍率提高的档数（与 <see cref="HeatBowlsRemaining"/> 配合）。</summary>
     public int HeatBonusTiers { get; set; }
 
-    /// <summary>鲜·提鲜：作用于非鲜味道分的乘算系数（默认 1.0，随味道种类数刷新）。</summary>
-    public double UmamiMultiplier { get; set; } = 1.0;
+    /// <summary>
+    /// 派生只读：鲜·提鲜作用于非鲜味道分的乘算系数。
+    /// 鲜 &gt; 0 时为 <c>min(1 + Config.UmamiBonusPerType × (ActiveFlavorTypeCount - 1), Config.UmamiMaxMultiplier)</c>，
+    /// 否则为 1.0。按当前锅状态即时计算、不存字段、无需任何路径刷新，
+    /// 因此加料 / 道具 / 锅底注入后立即正确，预览与结算不会漂移。
+    /// </summary>
+    public double UmamiMultiplier
+    {
+        get
+        {
+            if (GetFlavor(FlavorType.Umami) <= 0)
+                return 1.0;
+
+            int typeCount = ActiveFlavorTypeCount;
+            double multiplier = 1.0 + Config.UmamiBonusPerType * (typeCount - 1);
+            return Math.Min(multiplier, Config.UmamiMaxMultiplier);
+        }
+    }
 
     /// <summary>当前锅的生命周期阶段。</summary>
     public PotPhase Phase { get; set; } = PotPhase.NotStarted;
@@ -178,6 +200,7 @@ public class PotState
     {
         BowlNumber = 1;
         BowlLimit = bowlLimit;
+        IsFinalPot = false;
         Config = FlavorConfig.Default;
         Ingredients.Clear();
         Flavors.Clear();
@@ -193,7 +216,6 @@ public class PotState
         Statuses.Clear();
         HeatBowlsRemaining = 0;
         HeatBonusTiers = 0;
-        UmamiMultiplier = 1.0;
         Phase = PotPhase.NotStarted;
         CurrentBowlPhase = BowlPhase.Start;
     }

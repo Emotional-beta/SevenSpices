@@ -169,8 +169,8 @@ public static class GameControllerEventTests
         var lockedEvent = log.Of<ScoreLockedEvent>().First();
         Assert(calcEvent.FinalScore == lockedEvent.FinalScore,
             "ScoreCalculated 与 ScoreLocked 的 FinalScore 应一致");
-        Assert(calcEvent.Multiplier == ScoreCalculator.GetMultiplier(1),
-            "第 1 碗倍率应为 ×1");
+        Assert(calcEvent.Multiplier == ScoreCalculator.GetEffectiveMultiplier(gc.Pot),
+            "第 1 碗倍率应为实际生效倍率（含辣·余温口径）×1");
 
         var servedEvent = log.Of<CustomerServedEvent>().First();
         Assert(servedEvent.GoldAwarded == appearance.BaseGoldReward,

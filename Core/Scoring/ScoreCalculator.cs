@@ -37,10 +37,17 @@ public static class ScoreCalculator
     /// <summary>
     /// 计算实际生效的碗数倍率：碗数基础倍率 + 辣·余温的临时档位。
     /// <see cref="PotState.HeatBowlsRemaining"/> &gt; 0 时叠加 <see cref="PotState.HeatBonusTiers"/> 档。
+    /// <para>
+    /// 最终锅整锅一次性结算、固定取十碗倍率表的 ×32，不逐碗推进，余温永不递减，
+    /// 因此 <see cref="PotState.IsFinalPot"/> 时忽略余温，只用基础倍率（设计文档 §24.2）。
+    /// </para>
     /// </summary>
     public static int GetEffectiveMultiplier(PotState pot)
     {
         ArgumentNullException.ThrowIfNull(pot);
+
+        if (pot.IsFinalPot)
+            return GetMultiplier(pot.BowlNumber);
 
         int bonus = pot.HeatBowlsRemaining > 0 ? pot.HeatBonusTiers : 0;
         return GetMultiplier(pot.BowlNumber) + bonus;

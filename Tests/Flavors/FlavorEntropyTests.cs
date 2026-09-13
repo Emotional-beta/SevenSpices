@@ -144,19 +144,19 @@ public static class FlavorEntropyTests
         // 甜=5 → potency 1 → 复制 +1 → 6。
         var pot5 = new PotState { Config = config };
         pot5.AddFlavor(FlavorType.Sweet, 5);
-        FlavorInteractionSystem.Default.Resolve(pot5, MakeIngredient(0, (FlavorType.Sweet, 1)), config);
+        FlavorInteractionSystem.Default.Resolve(pot5, MakeIngredient(0, (FlavorType.Sweet, 1)));
         Assert(pot5.GetFlavor(FlavorType.Sweet) == 6, "甜=5（potency 1）→ 复制 +1 = 6");
 
         // 甜=6 → potency 2 → 复制 +2 → 8。
         var pot6 = new PotState { Config = config };
         pot6.AddFlavor(FlavorType.Sweet, 6);
-        FlavorInteractionSystem.Default.Resolve(pot6, MakeIngredient(0, (FlavorType.Sweet, 1)), config);
+        FlavorInteractionSystem.Default.Resolve(pot6, MakeIngredient(0, (FlavorType.Sweet, 1)));
         Assert(pot6.GetFlavor(FlavorType.Sweet) == 8, "甜=6（potency 2）→ 复制 +2 = 8");
 
         // 甜=11 → potency 3 → 复制 +3 → 14。
         var pot11 = new PotState { Config = config };
         pot11.AddFlavor(FlavorType.Sweet, 11);
-        FlavorInteractionSystem.Default.Resolve(pot11, MakeIngredient(0, (FlavorType.Sweet, 1)), config);
+        FlavorInteractionSystem.Default.Resolve(pot11, MakeIngredient(0, (FlavorType.Sweet, 1)));
         Assert(pot11.GetFlavor(FlavorType.Sweet) == 14, "甜=11（potency 3）→ 复制 +3 = 14");
     }
 
@@ -170,14 +170,14 @@ public static class FlavorEntropyTests
         var pot5 = new PotState { Config = config };
         pot5.AddFlavor(FlavorType.Bitter, 5);
         FlavorInteractionSystem.Default.Resolve(
-            pot5, MakeIngredient(0, (FlavorType.Bitter, 1)), config, baseScoreAdded: 10);
+            pot5, MakeIngredient(0, (FlavorType.Bitter, 1)), baseScoreAdded: 10);
         AssertClose(pot5.AgingPool, 5.5, "苦=5（potency 1）→ 10×0.5×1.1 = 5.5");
 
         // 苦=6 → potency 2：存入 10×0.5×2 = 10 → 当次复利 ×1.1 = 11
         var pot6 = new PotState { Config = config };
         pot6.AddFlavor(FlavorType.Bitter, 6);
         FlavorInteractionSystem.Default.Resolve(
-            pot6, MakeIngredient(0, (FlavorType.Bitter, 1)), config, baseScoreAdded: 10);
+            pot6, MakeIngredient(0, (FlavorType.Bitter, 1)), baseScoreAdded: 10);
         AssertClose(pot6.AgingPool, 11.0, "苦=6（potency 2）→ 10×0.5×2×1.1 = 11");
     }
 

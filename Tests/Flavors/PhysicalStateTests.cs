@@ -86,14 +86,14 @@ public static class PhysicalStateTests
         var pot = new PotState { Config = config };
         pot.AddFlavor(FlavorType.Umami, 3);
         pot.AddFlavor(FlavorType.Bitter, 3);
-        FlavorInteractionSystem.Default.Resolve(pot, MakeIngredient(0), config);
+        FlavorInteractionSystem.Default.Resolve(pot, MakeIngredient(0));
         Assert(pot.HasOdor, "鲜≥3 且 苦≥3 应触发臭");
         Assert(pot.Statuses.Count == 1, "应只激活 1 个物理状态");
         Assert(pot.Statuses.Get(PotStatusIds.Odor) == 1, "臭强度应为 1");
 
         // 重复加料幂等：仍只激活一次、强度不累加。
-        FlavorInteractionSystem.Default.Resolve(pot, MakeIngredient(0), config);
-        FlavorInteractionSystem.Default.Resolve(pot, MakeIngredient(0), config);
+        FlavorInteractionSystem.Default.Resolve(pot, MakeIngredient(0));
+        FlavorInteractionSystem.Default.Resolve(pot, MakeIngredient(0));
         Assert(pot.Statuses.Count == 1 && pot.Statuses.Get(PotStatusIds.Odor) == 1,
             "重复判定应幂等（每锅最多一次、强度不累加）");
     }
@@ -105,13 +105,13 @@ public static class PhysicalStateTests
         var lowBitter = new PotState { Config = config };
         lowBitter.AddFlavor(FlavorType.Umami, 3);
         lowBitter.AddFlavor(FlavorType.Bitter, 2);
-        FlavorInteractionSystem.Default.Resolve(lowBitter, MakeIngredient(0), config);
+        FlavorInteractionSystem.Default.Resolve(lowBitter, MakeIngredient(0));
         Assert(!lowBitter.HasOdor, "苦未达阈值不应触发臭");
 
         var lowUmami = new PotState { Config = config };
         lowUmami.AddFlavor(FlavorType.Umami, 2);
         lowUmami.AddFlavor(FlavorType.Bitter, 3);
-        FlavorInteractionSystem.Default.Resolve(lowUmami, MakeIngredient(0), config);
+        FlavorInteractionSystem.Default.Resolve(lowUmami, MakeIngredient(0));
         Assert(!lowUmami.HasOdor, "鲜未达阈值不应触发臭");
     }
 
@@ -221,7 +221,7 @@ public static class PhysicalStateTests
         pot.IsSolidified = true;
         pot.AddFlavor(FlavorType.Umami, 5);
         pot.AddFlavor(FlavorType.Bitter, 5);
-        FlavorInteractionSystem.Default.Resolve(pot, MakeIngredient(0), config);
+        FlavorInteractionSystem.Default.Resolve(pot, MakeIngredient(0));
         Assert(!pot.HasOdor, "咸·固化时臭不应触发");
 
         // 即便臭已激活，固化后也不做现实转移。
@@ -270,7 +270,7 @@ public static class PhysicalStateTests
         state.Pot.AddFlavor(FlavorType.Bitter, 10);
 
         // 通过一次加料的物理状态检查激活臭。
-        FlavorInteractionSystem.Default.Resolve(state.Pot, MakeIngredient(0), state.Pot.Config);
+        FlavorInteractionSystem.Default.Resolve(state.Pot, MakeIngredient(0));
         Assert(state.Pot.HasOdor, "构造前提：臭应已激活");
 
         ctrl.EndPot();

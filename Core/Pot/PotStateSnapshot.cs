@@ -18,6 +18,7 @@ internal sealed class PotStateSnapshot : PotState
         var snap = new PotStateSnapshot();
         snap.BowlNumber = source.BowlNumber;
         snap.BowlLimit = source.BowlLimit;
+        snap.IsFinalPot = source.IsFinalPot;
         snap.BaseScore = source.BaseScore;
         snap.FinalScore = source.FinalScore;
         snap.FinalScoreMultiplier = source.FinalScoreMultiplier;
@@ -33,7 +34,7 @@ internal sealed class PotStateSnapshot : PotState
         snap.IsSolidified = source.IsSolidified;
         snap.HeatBowlsRemaining = source.HeatBowlsRemaining;
         snap.HeatBonusTiers = source.HeatBonusTiers;
-        snap.UmamiMultiplier = source.UmamiMultiplier;
+        // 提鲜系数为派生只读（随 Config / Flavors 即时计算），无需拷贝。
 
         // F5 物理状态容器：深拷贝，否则预览得到的臭 / 丰盛失效会与真实结算不一致。
         foreach (var kv in source.Statuses.States)

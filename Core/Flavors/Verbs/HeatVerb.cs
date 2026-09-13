@@ -17,6 +17,12 @@ public sealed class HeatVerb : IFlavorVerb
         ArgumentNullException.ThrowIfNull(context);
 
         var pot = context.Pot;
+
+        // 最终锅整锅一次性结算、固定 ×32，不逐碗推进；余温加成对其无意义且永不递减，
+        // 故最终锅不消耗辣值、不设置余温（设计文档 §24.2）。
+        if (pot.IsFinalPot)
+            return;
+
         int spicy = pot.GetFlavor(FlavorType.Spicy);
         if (spicy <= 0)
             return;
