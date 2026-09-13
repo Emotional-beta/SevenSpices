@@ -95,9 +95,17 @@ public partial class Main : Node
         margin.AddThemeConstantOverride("margin_bottom", 20);
         uiRoot.AddChild(margin);
 
+        // 内容区放入纵向滚动容器，避免区块超出窗口高度后底部按钮被裁剪到屏幕外。
+        var scroll = new ScrollContainer();
+        scroll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        margin.AddChild(scroll);
+
         var vbox = new VBoxContainer();
         vbox.AddThemeConstantOverride("separation", 20);
-        margin.AddChild(vbox);
+        vbox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        scroll.AddChild(vbox);
 
         vbox.AddChild(MakeLabel("七荤八素", center: true, minHeight: 40));
 
@@ -165,8 +173,8 @@ public partial class Main : Node
         vbox.AddChild(_poolCountLabel);
 
         _skipBowlButton = new Button();
-        _skipBowlButton.Text = "跳过本碗（池已空）";
-        _skipBowlButton.CustomMinimumSize = new Vector2(180, 36);
+        _skipBowlButton.Text = "倒水（本碗不加入食材，直接结算）";
+        _skipBowlButton.CustomMinimumSize = new Vector2(280, 36);
         _skipBowlButton.Pressed += OnSkipBowlPressed;
         vbox.AddChild(_skipBowlButton);
 
