@@ -34,6 +34,18 @@ public class CompanionRegistry
             : throw new ArgumentException($"CompanionDefinition with Id '{id}' not found.", nameof(id));
     }
 
+    /// <summary>
+    /// 按 Id 查询 CompanionDefinition；id 为空 / 未注册时返回 null（用于存档恢复等「非致命」查找）。
+    /// 与 <see cref="Get"/> 不同，未命中不抛异常。
+    /// </summary>
+    public CompanionDefinition? Find(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return null;
+
+        return _defs.TryGetValue(id, out var def) ? def : null;
+    }
+
     /// <summary>返回所有已注册的 CompanionDefinition。</summary>
     public IReadOnlyList<CompanionDefinition> GetAll() =>
         _defs.Values.ToList().AsReadOnly();

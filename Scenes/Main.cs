@@ -7,6 +7,7 @@ using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
+using SevenSpices.Core.Save;
 using SevenSpices.Core.Scoring;
 
 namespace SevenSpices;
@@ -14,6 +15,7 @@ namespace SevenSpices;
 public partial class Main : Node
 {
     private GameController _controller = null!;
+    private readonly MetaState _metaState = new();
     private HBoxContainer _candidateRow = null!;
     private Button _skipBowlButton = null!;
     private Label _poolCountLabel = null!;
@@ -28,9 +30,14 @@ public partial class Main : Node
     private VBoxContainer _shopSection = null!;
     private HBoxContainer _shopRow = null!;
     private Button _skipShopButton = null!;
+    private VBoxContainer _routeSection = null!;
+    private HBoxContainer _routeRow = null!;
+    private Button _skipRouteButton = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
+    private Label _professionLabel = null!;
+    private HBoxContainer _professionRow = null!;
     private Label _phaseLabel = null!;
     private Label _bowlLabel = null!;
     private Label _scoreLabel = null!;
@@ -48,8 +55,12 @@ public partial class Main : Node
     private Label _flavorStatusLabel = null!;
     private Label _bottomLabel = null!;
     private Label _runEndLabel = null!;
+    private Button _restartButton = null!;
     private Button _nextPotButton = null!;
     private Button _endCookingButton = null!;
+    private Button _saveButton = null!;
+    private Button _loadButton = null!;
+    private Label _saveFeedbackLabel = null!;
 
     // 事件驱动刷新：任一游戏事件置脏，下一帧统一 RefreshUI。
     private bool _uiDirty;
@@ -62,7 +73,7 @@ public partial class Main : Node
 
     public override void _Ready()
     {
-        _controller = new GameController();
+        _controller = new GameController(metaState: _metaState);
         _controller.StartNewGame();
 
         GD.Print("七荤八素启动");
@@ -117,6 +128,47 @@ public partial class Main : Node
 
         vbox.AddChild(MakeLabel("七荤八素", center: true, minHeight: 40));
 
+        // 存档 / 读档入口：随时可用（读档会从当前锅开头重新开始）。
+        var saveRow = new HBoxContainer();
+        saveRow.Alignment = BoxContainer.AlignmentMode.Center;
+        saveRow.AddThemeConstantOverride("separation", 20);
+        vbox.AddChild(saveRow);
+
+        _saveButton = new Button();
+        _saveButton.Text = "存档";
+        _saveButton.CustomMinimumSize = new Vector2(120, 36);
+        _saveButton.Pressed += OnSavePressed;
+        saveRow.AddChild(_saveButton);
+
+        _loadButton = new Button();
+        _loadButton.Text = "读档";
+        _loadButton.CustomMinimumSize = new Vector2(120, 36);
+        _loadButton.Pressed += OnLoadPressed;
+        saveRow.AddChild(_loadButton);
+
+        _saveFeedbackLabel = MakeLabel(string.Empty, center: true, minHeight: 24);
+        vbox.AddChild(_saveFeedbackLabel);
+
+        // 职业选择面板：显示当前职业 + 7 个职业按钮（点按即用该职业开新局）。
+        _professionLabel = MakeLabel("职业：--", center: true, minHeight: 28);
+        vbox.AddChild(_professionLabel);
+
+        _professionRow = new HBoxContainer();
+        _professionRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _professionRow.AddThemeConstantOverride("separation", 10);
+        vbox.AddChild(_professionRow);
+
+        foreach (var profession in ProfessionConfig.All)
+        {
+            var captured = profession;
+            var professionButton = new Button();
+            professionButton.Text = captured.Name;
+            professionButton.CustomMinimumSize = new Vector2(110, 36);
+            professionButton.TooltipText = captured.Description;
+            professionButton.Pressed += () => OnProfessionPressed(captured.Id);
+            _professionRow.AddChild(professionButton);
+        }
+
         var runRow = new HBoxContainer();
         runRow.Alignment = BoxContainer.AlignmentMode.Center;
         runRow.AddThemeConstantOverride("separation", 40);
@@ -163,6 +215,14 @@ public partial class Main : Node
         _runEndLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _runEndLabel.Visible = false;
         vbox.AddChild(_runEndLabel);
+
+        // 本局结束后的重开入口：仅在 IsRunComplete 时可见 / 可点。
+        _restartButton = new Button();
+        _restartButton.Text = "重新开始（投胎重来）";
+        _restartButton.CustomMinimumSize = new Vector2(220, 40);
+        _restartButton.Visible = false;
+        _restartButton.Pressed += OnRestartPressed;
+        vbox.AddChild(_restartButton);
 
         _goldLabel = MakeLabel("金币：0", center: true, minHeight: 28);
         vbox.AddChild(_goldLabel);
@@ -275,6 +335,27 @@ public partial class Main : Node
         _skipShopButton.CustomMinimumSize = new Vector2(180, 36);
         _skipShopButton.Pressed += OnSkipShopPressed;
         _shopSection.AddChild(_skipShopButton);
+
+        // 每章第 3 锅商店结算后的路线（餐饮风潮）区域（仅等待选择时显示）
+        _routeSection = new VBoxContainer();
+        _routeSection.AddThemeConstantOverride("separation", 8);
+        _routeSection.Visible = false;
+        vbox.AddChild(_routeSection);
+
+        _routeSection.AddChild(MakeLabel(
+            "监味星君指点：挑一条道（1 保底 + 2 风潮）", center: true, minHeight: 28));
+
+        _routeRow = new HBoxContainer();
+        _routeRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _routeRow.AddThemeConstantOverride("separation", 15);
+        _routeRow.CustomMinimumSize = new Vector2(0, 40);
+        _routeSection.AddChild(_routeRow);
+
+        _skipRouteButton = new Button();
+        _skipRouteButton.Text = "跳过（领保底）";
+        _skipRouteButton.CustomMinimumSize = new Vector2(180, 36);
+        _skipRouteButton.Pressed += OnSkipRoutePressed;
+        _routeSection.AddChild(_skipRouteButton);
 
         // 普通锅结束后的跨锅推进入口
         _nextPotButton = new Button();
@@ -458,6 +539,26 @@ public partial class Main : Node
         _uiDirty = true;
     }
 
+    /// <summary>监味星君路线候选选择：只转发 GameController.ChooseRoute，不做流程判断。</summary>
+    private void OnRoutePressed(RouteDefinition candidate)
+    {
+        if (!_controller.CanChooseRoute)
+            return;
+
+        _controller.ChooseRoute(candidate.Id);
+        _uiDirty = true;
+    }
+
+    /// <summary>跳过路线：只转发 GameController.SkipRoute（跳过＝自动领保底）。</summary>
+    private void OnSkipRoutePressed()
+    {
+        if (!_controller.CanSkipRoute)
+            return;
+
+        _controller.SkipRoute();
+        _uiDirty = true;
+    }
+
     private void OnSkipBowlPressed()
     {
         if (!_controller.CanSkipBowl)
@@ -493,6 +594,81 @@ public partial class Main : Node
         _uiDirty = true;
     }
 
+    /// <summary>
+    /// 重新开始（投胎重来）入口：仅在本局已结束时可点，沿用当前职业。
+    /// </summary>
+    private void OnRestartPressed()
+    {
+        if (!_controller.IsRunComplete)
+            return;
+
+        _controller.StartNewGame(_controller.Run.ProfessionId);
+        _uiDirty = true;
+    }
+
+    /// <summary>
+    /// 存档：把 GameController 抓取的 DTO 序列化后写入本地文件，并给一句反馈。
+    /// 写文件失败由 SaveStore 返回 false，据此提示「存档失败」，不崩游戏。
+    /// </summary>
+    private void OnSavePressed()
+    {
+        try
+        {
+            bool ok = SaveStore.Write(SaveSerializer.ToJson(_controller.CaptureSave()));
+            SetSaveFeedback(ok ? "已存档。" : "存档失败：无法写入存档文件。");
+        }
+        catch (Exception ex)
+        {
+            SetSaveFeedback($"存档失败：{ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 读档：无存档 / 文件损坏 / 反序列化失败分别提示；成功则让 GameController 恢复
+    /// （从当前锅开头重新开始），随后置脏刷新 UI。任何失败都不崩游戏。
+    /// </summary>
+    private void OnLoadPressed()
+    {
+        SaveReadResult result = SaveStore.Read(out string? json);
+        if (result == SaveReadResult.NotFound)
+        {
+            SetSaveFeedback("没有找到存档。");
+            return;
+        }
+        if (result == SaveReadResult.Failed)
+        {
+            SetSaveFeedback("读档失败：存档文件无法读取。");
+            return;
+        }
+
+        try
+        {
+            _controller.RestoreSave(SaveSerializer.FromJson(json!));
+            SetSaveFeedback("读档完成：已从当前锅开头重新开始。");
+            _uiDirty = true;
+        }
+        catch (Exception ex)
+        {
+            SetSaveFeedback($"读档失败：{ex.Message}");
+        }
+    }
+
+    private void SetSaveFeedback(string text)
+    {
+        _saveFeedbackLabel.Text = text;
+        _saveFeedbackLabel.Visible = text.Length > 0;
+    }
+
+    /// <summary>
+    /// 职业选择入口：用选定职业直接开一局新游戏，随后刷新。
+    /// 表现层只转发 GameController.StartNewGame，不参与任何流程判断。
+    /// </summary>
+    private void OnProfessionPressed(string professionId)
+    {
+        _controller.StartNewGame(professionId);
+        _uiDirty = true;
+    }
+
     private void RefreshUI()
     {
         var run = _controller.Run;
@@ -500,6 +676,9 @@ public partial class Main : Node
 
         _chapterLabel.Text = $"第 {run.Chapter} 章";
         _potLabel.Text = run.IsFinalPot ? "最终锅" : $"第 {run.PotIndex} 锅";
+        _professionLabel.Text = ProfessionConfig.TryGet(run.ProfessionId, out var profession)
+            ? $"职业：{profession.Name}（{ToFlavorName(profession.Theme)}）"
+            : "职业：--";
         _phaseLabel.Text = $"阶段：{ToBowlPhaseText(pot.CurrentBowlPhase)}";
         // 最终锅不按碗推进（BowlNumber 固定为 ×32 档位），显示碗数会误导玩家
         _bowlLabel.Text = run.IsFinalPot
@@ -562,12 +741,17 @@ public partial class Main : Node
         RebuildItemSection();
         RebuildCompanionSection();
         RebuildShopSection();
+        RebuildRouteSection();
 
         bool runOver = _controller.IsRunComplete;
         _skipBowlButton.Disabled = runOver || !_controller.CanSkipBowl;
         // 奖励未选定时 CanAdvanceToNextPot 为 false，「进入下一锅」自动被门控。
         _nextPotButton.Disabled = runOver || !_controller.CanAdvanceToNextPot;
         _endCookingButton.Disabled = runOver || !_controller.CanEndCooking;
+
+        // 重开按钮与其余按钮相反：仅本局结束时可见 / 可点，进行中不可点。
+        _restartButton.Visible = runOver;
+        _restartButton.Disabled = !runOver;
 
         RefreshRunEnd(run, pot);
     }
@@ -800,6 +984,55 @@ public partial class Main : Node
         }
 
         _skipShopButton.Disabled = !_controller.CanSkipShop;
+    }
+
+    /// <summary>
+    /// 按当前路线候选重建监味星君区域（仅等待选择时显示）。
+    /// 表现层只读 RouteOffers、调 CanChooseRoute/CanSkipRoute 判断，再回调
+    /// GameController.ChooseRoute/SkipRoute，不参与任何流程判断。
+    /// </summary>
+    private void RebuildRouteSection()
+    {
+        bool awaiting = _controller.IsAwaitingRouteChoice;
+        _routeSection.Visible = awaiting;
+
+        foreach (Node child in _routeRow.GetChildren())
+        {
+            _routeRow.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        if (!awaiting)
+            return;
+
+        foreach (var candidate in _controller.RouteOffers)
+        {
+            var captured = candidate;
+
+            var column = new VBoxContainer();
+            column.AddThemeConstantOverride("separation", 4);
+
+            string tag = captured.Kind == RouteKind.FlavorTrend && captured.Theme != null
+                ? $"风潮·{ToFlavorName(captured.Theme.Value)}"
+                : "保底";
+            column.AddChild(MakeLabel($"{captured.Name}（{tag}）", center: true, minHeight: 24));
+
+            var info = MakeLabel(captured.Description, center: true);
+            info.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            info.CustomMinimumSize = new Vector2(240, 0);
+            column.AddChild(info);
+
+            var btn = new Button();
+            btn.Text = "就它";
+            btn.CustomMinimumSize = new Vector2(90, 32);
+            btn.Disabled = !_controller.CanChooseRoute;
+            btn.Pressed += () => OnRoutePressed(captured);
+            column.AddChild(btn);
+
+            _routeRow.AddChild(column);
+        }
+
+        _skipRouteButton.Disabled = !_controller.CanSkipRoute;
     }
 
     /// <summary>

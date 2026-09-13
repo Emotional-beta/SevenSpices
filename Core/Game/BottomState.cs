@@ -18,6 +18,9 @@ public class BottomState
     public void SetFlavor(FlavorType flavor, int value) =>
         Flavors[flavor] = Math.Max(0, value);
 
+    /// <summary>清空锅底全部味道，用于开始一局全新游戏（不残留上一局锅底）。</summary>
+    public void Clear() => Flavors.Clear();
+
     /// <summary>
     /// 将锅底味道应用到新锅的 PotState。
     /// 只在锅开始时调用一次，之后锅底值不再重复注入。

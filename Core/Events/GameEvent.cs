@@ -1,4 +1,5 @@
 using SevenSpices.Core.Companions;
+using SevenSpices.Core.Content;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
@@ -13,6 +14,17 @@ namespace SevenSpices.Core.Events;
 /// </summary>
 public abstract class GameEvent
 {
+}
+
+/// <summary>玩家选定职业并开局（已写入 Run.ProfessionId、已发起始套装）。</summary>
+public sealed class ProfessionChosenEvent : GameEvent
+{
+    public string ProfessionId { get; }
+
+    public ProfessionChosenEvent(string professionId)
+    {
+        ProfessionId = professionId ?? throw new ArgumentNullException(nameof(professionId));
+    }
 }
 
 /// <summary>一锅开始（已注入锅底、进入 InProgress）。</summary>
@@ -330,6 +342,39 @@ public sealed class RunFailedEvent : GameEvent
         Reason = reason ?? throw new ArgumentNullException(nameof(reason));
         Chapter = chapter;
         PotIndex = potIndex;
+    }
+}
+
+/// <summary>
+/// 监味星君已提供一批路线候选（1 保底 + 2 风潮），等待玩家选择 / 跳过。
+/// 由 GameController 在「第 3 锅商店结算后」的锅结束链最末派发。
+/// </summary>
+public sealed class RouteOfferedEvent : GameEvent
+{
+    public IReadOnlyList<RouteDefinition> Candidates { get; }
+
+    public RouteOfferedEvent(IReadOnlyList<RouteDefinition> candidates)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        Candidates = candidates.ToArray();
+    }
+}
+
+/// <summary>
+/// 玩家已选定一条路线（或跳过触发保底）。携带选中的定义与是否为跳过；
+/// 选择风潮时 <c>Run.RouteId</c> / <c>Run.RouteActiveChapter</c> 已写入。
+/// </summary>
+public sealed class RouteChosenEvent : GameEvent
+{
+    public RouteDefinition Route { get; }
+
+    /// <summary>是否为「跳过」触发（跳过 = 自动执行本批候选里的保底项）。</summary>
+    public bool Skipped { get; }
+
+    public RouteChosenEvent(RouteDefinition route, bool skipped)
+    {
+        Route = route ?? throw new ArgumentNullException(nameof(route));
+        Skipped = skipped;
     }
 }
 

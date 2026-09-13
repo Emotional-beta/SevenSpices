@@ -1,3 +1,4 @@
+using SevenSpices.Core.Common;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Items;
@@ -71,6 +72,61 @@ public static class ItemData
     /// <summary>Boss 专属道具 Registry：商店 / 随机掉落只读 Registry，Boss 赏赐只读本 Registry。</summary>
     public static ItemRegistry SpecialRegistry { get; } = new(new[] { ImmortalPowder });
 
+    // ── 职业专属道具 ──────────────────────────────────────────────────────────
+
+    /// <summary>蚀味引子（酸 +2）：职业专属，不进随机商店 / 掉落池。</summary>
+    public static ItemDefinition EtchingPrimer { get; } = new(
+        id: "etching_primer",
+        name: "蚀味引子",
+        effects: new IEffect[] { new AddFlavorEffect(FlavorType.Sour, 2) });
+
+    /// <summary>双生勺（甜 +2）：职业专属，不进随机商店 / 掉落池。</summary>
+    public static ItemDefinition TwinSpoon { get; } = new(
+        id: "twin_spoon",
+        name: "双生勺",
+        effects: new IEffect[] { new AddFlavorEffect(FlavorType.Sweet, 2) });
+
+    /// <summary>老卤存折（苦 +2）：职业专属，不进随机商店 / 掉落池。</summary>
+    public static ItemDefinition BrinePassbook { get; } = new(
+        id: "brine_passbook",
+        name: "老卤存折",
+        effects: new IEffect[] { new AddFlavorEffect(FlavorType.Bitter, 2) });
+
+    /// <summary>余温炭（辣 +2）：职业专属，不进随机商店 / 掉落池。</summary>
+    public static ItemDefinition EmberCharcoal { get; } = new(
+        id: "ember_charcoal",
+        name: "余温炭",
+        effects: new IEffect[] { new AddFlavorEffect(FlavorType.Spicy, 2) });
+
+    /// <summary>高汤膏（鲜 +2）：职业专属，不进随机商店 / 掉落池。</summary>
+    public static ItemDefinition StockPaste { get; } = new(
+        id: "stock_paste",
+        name: "高汤膏",
+        effects: new IEffect[] { new AddFlavorEffect(FlavorType.Umami, 2) });
+
+    /// <summary>封口石（咸 +2）：职业专属，不进随机商店 / 掉落池。</summary>
+    public static ItemDefinition SealStone { get; } = new(
+        id: "seal_stone",
+        name: "封口石",
+        effects: new IEffect[] { new AddFlavorEffect(FlavorType.Salty, 2) });
+
+    /// <summary>回音碗（麻 +2）：职业专属，不进随机商店 / 掉落池。</summary>
+    public static ItemDefinition EchoBowl { get; } = new(
+        id: "echo_bowl",
+        name: "回音碗",
+        effects: new IEffect[] { new AddFlavorEffect(FlavorType.Numbing, 2) });
+
+    /// <summary>
+    /// 职业专属道具 Registry：与正式 Registry 隔离，
+    /// <see cref="CreateRandomInstance"/> / <see cref="CreateRandomInstances"/> 只读正式 Registry，
+    /// 因此专属道具绝不会进入随机商店 / 掉落池。
+    /// </summary>
+    public static ItemRegistry ProfessionRegistry { get; } = new(new[]
+    {
+        EtchingPrimer, TwinSpoon, BrinePassbook, EmberCharcoal,
+        StockPaste, SealStone, EchoBowl
+    });
+
     // ── 工厂方法 ──────────────────────────────────────────────────────────────
 
     /// <summary>从正式 Registry 按 ID 创建新的 ItemInstance。</summary>
@@ -86,15 +142,30 @@ public static class ItemData
         new(SpecialRegistry.Get(itemId));
 
     /// <summary>
+    /// 按职业 Id 创建该职业的起始专属道具实例（从 ProfessionRegistry 取，不进随机池）。
+    /// </summary>
+    public static ItemInstance CreateProfessionItem(string professionId)
+    {
+        var profession = ProfessionConfig.Get(professionId);
+        return new ItemInstance(ProfessionRegistry.Get(profession.StarterItemId));
+    }
+
+    /// <summary>
     /// 从正式 Registry 的全部道具中随机取一个 Definition 创建实例。
     /// 用于稀有食客满意时的随机道具掉落。
+    /// <paramref name="weightSelector"/> 为可选权重函数（接口对齐；当前路线系统只对食材传权重）：
+    /// 为 null 或权重全等时走原有 <see cref="Random.Next(int)"/> 路径，行为与随机数消耗逐位不变。
     /// </summary>
-    public static ItemInstance CreateRandomInstance(Random random)
+    public static ItemInstance CreateRandomInstance(
+        Random random,
+        Func<ItemDefinition, double>? weightSelector = null)
     {
         ArgumentNullException.ThrowIfNull(random);
 
         var all = Registry.GetAll();
-        var definition = all[random.Next(all.Count)];
+        var definition = WeightedRandom.IsUniform(all, weightSelector)
+            ? all[random.Next(all.Count)]
+            : all[WeightedRandom.PickIndex(all, weightSelector!, random)];
         return new ItemInstance(definition);
     }
 
@@ -102,8 +173,12 @@ public static class ItemData
     /// 从正式 Registry 的全部道具中随机抽取 <paramref name="count"/> 个<b>互不重复</b>的
     /// Definition 创建实例。用于商店道具陈列（设计文档 §18）。
     /// <paramref name="count"/> 超过定义总数时返回全部；<paramref name="count"/> ≤ 0 时返回空。
+    /// <paramref name="weightSelector"/> 为可选权重函数：为 null 或权重全等时行为与旧实现逐位一致。
     /// </summary>
-    public static IReadOnlyList<ItemInstance> CreateRandomInstances(int count, Random random)
+    public static IReadOnlyList<ItemInstance> CreateRandomInstances(
+        int count,
+        Random random,
+        Func<ItemDefinition, double>? weightSelector = null)
     {
         ArgumentNullException.ThrowIfNull(random);
 
@@ -112,10 +187,13 @@ public static class ItemData
         if (take <= 0)
             return Array.Empty<ItemInstance>();
 
+        bool weighted = !WeightedRandom.IsUniform(remaining, weightSelector);
         var instances = new List<ItemInstance>(take);
         for (int i = 0; i < take; i++)
         {
-            int index = random.Next(remaining.Count);
+            int index = weighted
+                ? WeightedRandom.PickIndex(remaining, weightSelector!, random)
+                : random.Next(remaining.Count);
             instances.Add(new ItemInstance(remaining[index]));
             remaining.RemoveAt(index);
         }
@@ -124,8 +202,13 @@ public static class ItemData
     }
 
     /// <summary>
-    /// 创建开局初始道具：从正式 Registry 随机取 1 个（设计规则：开局随机给 1 个道具）。
+    /// 创建开局初始道具：从正式 Registry 随机取 1 个。
+    /// <para>
+    /// 已无生产调用：职业系统后开局道具由 <see cref="CreateProfessionItem"/> 发放（职业专属、非随机）。
+    /// 保留公开 API 以免破坏潜在引用。
+    /// </para>
     /// </summary>
+    [Obsolete("职业系统后由 CreateProfessionItem 取代")]
     public static IReadOnlyList<ItemInstance> CreateInitialItems(Random random)
     {
         ArgumentNullException.ThrowIfNull(random);

@@ -60,6 +60,8 @@ public class RunController
         run.PotIndex = 1;
         run.IsFinalPot = false;
         run.RouteId = null;
+        run.RouteActiveChapter = 0;
+        run.ProfessionId = null;
         run.ChapterBossRecords.Clear();
         run.IsFailed = false;
         run.FailReason = null;
@@ -92,7 +94,12 @@ public class RunController
         var run = _gameState.Run;
         int bowlLimit = run.IsFinalPot ? int.MaxValue : 10;
         _gameState.Pot.Reset(bowlLimit);
-        var ctrl = new PotController(_gameState, _companions, flavorConfig: _flavorConfig);
+        // 本局职业的窄扩展点：从 Run.ProfessionId 取（取不到则为空，行为与无职业一致）。
+        var professionHooks = ProfessionConfig.TryGet(run.ProfessionId, out var profession)
+            ? profession.Hooks
+            : null;
+        var ctrl = new PotController(
+            _gameState, _companions, flavorConfig: _flavorConfig, professionHooks: professionHooks);
         ctrl.StartPot();
         return ctrl;
     }

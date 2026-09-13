@@ -1,3 +1,4 @@
+using SevenSpices.Core.Common;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
@@ -5,7 +6,7 @@ using SevenSpices.Core.Ingredients;
 namespace SevenSpices.Core.Content;
 
 /// <summary>
-/// 正式游戏食材数据工厂，提供 10 个基础食材 Definition 及其 Registry。
+/// 正式游戏食材数据工厂，提供 13 个基础食材 Definition 及其 Registry。
 /// </summary>
 public static class IngredientData
 {
@@ -118,12 +119,106 @@ public static class IngredientData
             new UniqueIngredientCountScoreEffect(requiredCount: 3, bonus: 3)
         });
 
+    /// <summary>苦瓜：基础分2，苦+3。基础食材，进随机池与商店。</summary>
+    public static IngredientDefinition BitterMelon { get; } = new(
+        id: "bitter_melon",
+        name: "苦瓜",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Bitter] = 3 });
+
+    /// <summary>腌芥菜：基础分2，咸+3。基础食材，进随机池与商店。</summary>
+    public static IngredientDefinition SaltedVegetable { get; } = new(
+        id: "salted_vegetable",
+        name: "腌芥菜",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Salty] = 3 });
+
+    /// <summary>花椒：基础分2，麻+3。基础食材，进随机池与商店；与职业专属「青花椒串」区分。</summary>
+    public static IngredientDefinition SichuanPepper { get; } = new(
+        id: "sichuan_pepper",
+        name: "花椒",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Numbing] = 3 });
+
+    // ── 职业专属食材 ──────────────────────────────────────────────────────────
+
+    /// <summary>陈年酸笋（酸）：基础分2，酸+3。职业专属，不进随机池。</summary>
+    public static IngredientDefinition PickledBamboo { get; } = new(
+        id: "pickled_bamboo",
+        name: "陈年酸笋",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Sour] = 3 });
+
+    /// <summary>麦芽糖稀（甜）：基础分2，甜+3。职业专属，不进随机池。</summary>
+    public static IngredientDefinition MaltSyrup { get; } = new(
+        id: "malt_syrup",
+        name: "麦芽糖稀",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Sweet] = 3 });
+
+    /// <summary>苦荞茶饼（苦）：基础分2，苦+3。职业专属，不进随机池。</summary>
+    public static IngredientDefinition BuckwheatTea { get; } = new(
+        id: "buckwheat_tea",
+        name: "苦荞茶饼",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Bitter] = 3 });
+
+    /// <summary>灯笼椒（辣）：基础分2，辣+3。职业专属，不进随机池。</summary>
+    public static IngredientDefinition LanternPepper { get; } = new(
+        id: "lantern_pepper",
+        name: "灯笼椒",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Spicy] = 3 });
+
+    /// <summary>干贝瑶柱（鲜）：基础分2，鲜+3。职业专属，不进随机池。</summary>
+    public static IngredientDefinition DriedScallop { get; } = new(
+        id: "dried_scallop",
+        name: "干贝瑶柱",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Umami] = 3 });
+
+    /// <summary>岩盐结晶（咸）：基础分2，咸+3。职业专属，不进随机池。</summary>
+    public static IngredientDefinition RockSalt { get; } = new(
+        id: "rock_salt",
+        name: "岩盐结晶",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Salty] = 3 });
+
+    /// <summary>青花椒串（麻）：基础分2，麻+3。职业专属，不进随机池。</summary>
+    public static IngredientDefinition GreenSichuanPepper { get; } = new(
+        id: "green_sichuan_pepper",
+        name: "青花椒串",
+        rarity: IngredientRarity.Common,
+        baseScore: 2,
+        flavors: new() { [FlavorType.Numbing] = 3 });
+
     // ── Registry ───────────────────────────────────────────────────────────────
 
-    /// <summary>包含全部 10 种正式食材的 Registry 实例。</summary>
+    /// <summary>包含全部 13 种正式食材的 Registry 实例。</summary>
     public static IngredientRegistry Registry { get; } = new(new[]
     {
-        Rice, Sugar, Pepper, RedDate, Ginger, Vinegar, Honey, ChiliOil, IceCube, Egg
+        Rice, Sugar, Pepper, RedDate, Ginger, Vinegar, Honey, ChiliOil, IceCube, Egg,
+        BitterMelon, SaltedVegetable, SichuanPepper
+    });
+
+    /// <summary>
+    /// 职业专属食材 Registry：与正式 Registry 隔离，
+    /// <see cref="CreateRandomInstance"/> / <see cref="CreateRandomInstances"/> 只读正式 Registry，
+    /// 因此专属食材绝不会进入随机掉落 / 商店 / 奖励池。
+    /// </summary>
+    public static IngredientRegistry ProfessionRegistry { get; } = new(new[]
+    {
+        PickledBamboo, MaltSyrup, BuckwheatTea, LanternPepper,
+        DriedScallop, RockSalt, GreenSichuanPepper
     });
 
     // ── 工厂方法 ──────────────────────────────────────────────────────────────
@@ -135,13 +230,19 @@ public static class IngredientData
     /// <summary>
     /// 从正式 Registry 的全部食材中随机取一个 Definition 创建实例。
     /// 用于稀有食客满意时的随机食材掉落。
+    /// <paramref name="weightSelector"/> 为可选的食材权重函数（餐饮风潮倾斜用）：
+    /// 为 null 或权重全等时走原有 <see cref="Random.Next(int)"/> 路径，行为与随机数消耗逐位不变。
     /// </summary>
-    public static IngredientInstance CreateRandomInstance(Random random)
+    public static IngredientInstance CreateRandomInstance(
+        Random random,
+        Func<IngredientDefinition, double>? weightSelector = null)
     {
         ArgumentNullException.ThrowIfNull(random);
 
         var all = Registry.GetAll();
-        var definition = all[random.Next(all.Count)];
+        var definition = WeightedRandom.IsUniform(all, weightSelector)
+            ? all[random.Next(all.Count)]
+            : all[WeightedRandom.PickIndex(all, weightSelector!, random)];
         return new IngredientInstance(definition);
     }
 
@@ -149,8 +250,12 @@ public static class IngredientData
     /// 从正式 Registry 的全部食材中随机抽取 <paramref name="count"/> 个<b>互不重复</b>的
     /// Definition 创建实例。用于锅结束奖励候选（设计文档 §17）。
     /// <paramref name="count"/> 超过定义总数时返回全部；<paramref name="count"/> ≤ 0 时返回空。
+    /// <paramref name="weightSelector"/> 为可选权重函数：为 null 或权重全等时行为与旧实现逐位一致。
     /// </summary>
-    public static IReadOnlyList<IngredientInstance> CreateRandomInstances(int count, Random random)
+    public static IReadOnlyList<IngredientInstance> CreateRandomInstances(
+        int count,
+        Random random,
+        Func<IngredientDefinition, double>? weightSelector = null)
     {
         ArgumentNullException.ThrowIfNull(random);
 
@@ -159,10 +264,13 @@ public static class IngredientData
         if (take <= 0)
             return Array.Empty<IngredientInstance>();
 
+        bool weighted = !WeightedRandom.IsUniform(remaining, weightSelector);
         var instances = new List<IngredientInstance>(take);
         for (int i = 0; i < take; i++)
         {
-            int index = random.Next(remaining.Count);
+            int index = weighted
+                ? WeightedRandom.PickIndex(remaining, weightSelector!, random)
+                : random.Next(remaining.Count);
             instances.Add(new IngredientInstance(remaining[index]));
             remaining.RemoveAt(index);
         }
@@ -171,18 +279,24 @@ public static class IngredientData
     }
 
     /// <summary>
-    /// 创建初始食材篮：5 个米饭 + 1 个职业特殊食材。
-    /// 职业系统未实现，暂用 1 个辣椒占位。
+    /// 创建初始食材篮：5 个米饭 + 1 个该职业专属食材。
     /// </summary>
-    public static IReadOnlyList<IngredientInstance> CreateInitialBasket()
+    public static IReadOnlyList<IngredientInstance> CreateInitialBasket(ProfessionDefinition profession)
     {
+        ArgumentNullException.ThrowIfNull(profession);
+
         var basket = new List<IngredientInstance>(6);
         for (int i = 0; i < 5; i++)
             basket.Add(new IngredientInstance(Rice));
 
-        // TODO 职业系统：用玩家职业的特殊食材替换此辣椒占位。
-        basket.Add(new IngredientInstance(Pepper));
+        basket.Add(new IngredientInstance(ProfessionRegistry.Get(profession.StarterIngredientId)));
 
         return basket;
     }
+
+    /// <summary>
+    /// 创建初始食材篮（无职业参数）：走默认职业，兼容既有调用。
+    /// </summary>
+    public static IReadOnlyList<IngredientInstance> CreateInitialBasket() =>
+        CreateInitialBasket(ProfessionConfig.Default);
 }

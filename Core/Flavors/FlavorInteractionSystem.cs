@@ -3,6 +3,7 @@ using SevenSpices.Core.Content;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Flavors.Verbs;
+using SevenSpices.Core.Professions;
 
 namespace SevenSpices.Core.Flavors;
 
@@ -88,6 +89,12 @@ public class FlavorInteractionSystem
                     continue;
 
                 ApplyVerbSafe(flavor, pot, added, baseScoreAdded);
+
+                // 职业动词联动：某味道动词刚结算后，可按职业钩子额外再触发一次目标味道的动词。
+                // 目标不得等于当前味道（防自递归）；直接调动词不会重入本循环，故每次加料至多多触发一次。
+                var extra = ProfessionSystem.GetExtraTriggerAfter(pot, flavor);
+                if (extra.HasValue && extra.Value != flavor)
+                    ApplyVerbSafe(extra.Value, pot, added, baseScoreAdded: 0);
             }
 
             // 苦·陈酿：每次加料推进池的增长 / 到期判定（存入由苦动词完成）。
@@ -157,7 +164,17 @@ public class FlavorInteractionSystem
         if (highest <= 0)
             return;
 
+        // 职业动词联动：目标可被职业钩子覆盖（null 仍走默认最高味）；
+        // 触发次数经职业钩子修正（如麻职业「再响一次」）。
+        var overrideTarget = ProfessionSystem.GetResonanceTarget(pot);
+        if (overrideTarget.HasValue)
+            target = overrideTarget.Value;
+
         int triggers = Math.Min(highest, pot.Config.NumbingResonanceCap);
+        // 职业钩子（如麻·云贵术士「再响一次」）只在上限内加码：修正后仍需统一夹回配置封顶，
+        // 否则会得到 cap+1 突破封顶语义；同时防御负值。
+        triggers = ProfessionSystem.ModifyResonanceTriggers(pot, triggers);
+        triggers = Math.Clamp(triggers, 0, Math.Max(0, pot.Config.NumbingResonanceCap));
         for (int i = 0; i < triggers; i++)
             ApplyVerbSafe(target, pot, added, baseScoreAdded: 0);
     }

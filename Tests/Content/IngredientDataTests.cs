@@ -7,7 +7,7 @@ using SevenSpices.Core.Pot;
 namespace SevenSpices.Tests.Content;
 
 /// <summary>
-/// 正式食材数据测试：验证 10 种食材的 Definition 正确性及效果行为。
+/// 正式食材数据测试：验证 13 种食材的 Definition 正确性及效果行为。
 /// Phase 4 Part 4。
 /// </summary>
 public static class IngredientDataTests
@@ -15,9 +15,10 @@ public static class IngredientDataTests
     public static void RunAll()
     {
         // Registry 完整性
-        Test_Registry_HasTenIngredients();
+        Test_Registry_HasThirteenIngredients();
         Test_Registry_AllIdsUnique();
         Test_Registry_CanGetByAllIds();
+        Test_Registry_CoversAllSevenFlavors();
 
         // 基础属性
         Test_Rice_Attributes();
@@ -30,6 +31,9 @@ public static class IngredientDataTests
         Test_ChiliOil_Attributes();
         Test_IceCube_Attributes();
         Test_Egg_Attributes();
+        Test_BitterMelon_Attributes();
+        Test_SaltedVegetable_Attributes();
+        Test_SichuanPepper_Attributes();
 
         // Instance 创建
         Test_CreateInstance_ReferencesCorrectDefinition();
@@ -82,10 +86,10 @@ public static class IngredientDataTests
 
     // ── Registry 完整性 ────────────────────────────────────────────────────────
 
-    static void Test_Registry_HasTenIngredients()
+    static void Test_Registry_HasThirteenIngredients()
     {
-        Assert(IngredientData.Registry.GetAll().Count == 10,
-            "正式 Registry 应包含 10 种食材");
+        Assert(IngredientData.Registry.GetAll().Count == 13,
+            "正式 Registry 应包含 13 种食材");
     }
 
     static void Test_Registry_AllIdsUnique()
@@ -100,12 +104,33 @@ public static class IngredientDataTests
         var ids = new[]
         {
             "rice", "sugar", "pepper", "red_date", "ginger",
-            "vinegar", "honey", "chili_oil", "ice_cube", "egg"
+            "vinegar", "honey", "chili_oil", "ice_cube", "egg",
+            "bitter_melon", "salted_vegetable", "sichuan_pepper"
         };
         foreach (var id in ids)
         {
             var def = IngredientData.Registry.Get(id);
             Assert(def.Id == id, $"Registry.Get(\"{id}\") 应返回正确 Definition");
+        }
+    }
+
+    /// <summary>正式 Registry 必须覆盖全部 7 种味道，否则对应味道的路线风潮会退化为均匀（死选项）。</summary>
+    static void Test_Registry_CoversAllSevenFlavors()
+    {
+        var covered = new HashSet<FlavorType>();
+        foreach (var def in IngredientData.Registry.GetAll())
+        {
+            foreach (var (flavor, amount) in def.Flavors)
+            {
+                if (amount > 0)
+                    covered.Add(flavor);
+            }
+        }
+
+        foreach (FlavorType flavor in Enum.GetValues<FlavorType>())
+        {
+            Assert(covered.Contains(flavor),
+                $"正式 Registry 应至少含一种「{flavor}」味道的基础食材");
         }
     }
 
@@ -200,6 +225,37 @@ public static class IngredientDataTests
         Assert(d.Rarity == IngredientRarity.Common, "鸡蛋 稀有度=普通");
         Assert(d.BaseScore == 3, "鸡蛋 基础分=3");
         Assert(d.Flavors.ContainsKey(FlavorType.Umami) && d.Flavors[FlavorType.Umami] == 1, "鸡蛋 鲜+1");
+    }
+
+    static void Test_BitterMelon_Attributes()
+    {
+        var d = IngredientData.BitterMelon;
+        Assert(d.Id == "bitter_melon", "苦瓜 ID");
+        Assert(d.Name == "苦瓜", "苦瓜 名称");
+        Assert(d.Rarity == IngredientRarity.Common, "苦瓜 稀有度=普通");
+        Assert(d.BaseScore == 2, "苦瓜 基础分=2");
+        Assert(d.Flavors.ContainsKey(FlavorType.Bitter) && d.Flavors[FlavorType.Bitter] == 3, "苦瓜 苦+3");
+    }
+
+    static void Test_SaltedVegetable_Attributes()
+    {
+        var d = IngredientData.SaltedVegetable;
+        Assert(d.Id == "salted_vegetable", "腌芥菜 ID");
+        Assert(d.Name == "腌芥菜", "腌芥菜 名称");
+        Assert(d.Rarity == IngredientRarity.Common, "腌芥菜 稀有度=普通");
+        Assert(d.BaseScore == 2, "腌芥菜 基础分=2");
+        Assert(d.Flavors.ContainsKey(FlavorType.Salty) && d.Flavors[FlavorType.Salty] == 3, "腌芥菜 咸+3");
+    }
+
+    static void Test_SichuanPepper_Attributes()
+    {
+        var d = IngredientData.SichuanPepper;
+        Assert(d.Id == "sichuan_pepper", "花椒 ID");
+        Assert(d.Name == "花椒", "花椒 名称");
+        Assert(d.Rarity == IngredientRarity.Common, "花椒 稀有度=普通");
+        Assert(d.BaseScore == 2, "花椒 基础分=2");
+        Assert(d.Flavors.ContainsKey(FlavorType.Numbing) && d.Flavors[FlavorType.Numbing] == 3, "花椒 麻+3");
+        Assert(d.Id != IngredientData.GreenSichuanPepper.Id, "基础花椒应与职业专属「青花椒串」区分 Id");
     }
 
     // ── Instance 创建 ─────────────────────────────────────────────────────────

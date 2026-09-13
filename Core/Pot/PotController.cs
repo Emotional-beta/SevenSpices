@@ -7,6 +7,7 @@ using SevenSpices.Core.Flavors.Verbs;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
+using SevenSpices.Core.Professions;
 using SevenSpices.Core.Scoring;
 
 namespace SevenSpices.Core.Pot;
@@ -28,16 +29,21 @@ public class PotController
     /// <summary>味道系统可调数值配置。为 null 时使用 <see cref="FlavorConfig.Default"/>。</summary>
     private readonly FlavorConfig _flavorConfig;
 
+    /// <summary>本局职业的扩展点列表（可为 null）。开锅时注入起手状态并挑出动词联动钩子。</summary>
+    private readonly IReadOnlyList<IProfessionHook>? _professionHooks;
+
     public PotController(
         GameState gameState,
         CompanionSystem? companions = null,
         FlavorInteractionSystem? flavorInteraction = null,
-        FlavorConfig? flavorConfig = null)
+        FlavorConfig? flavorConfig = null,
+        IReadOnlyList<IProfessionHook>? professionHooks = null)
     {
         _gameState = gameState;
         _companions = companions;
         _flavorInteraction = flavorInteraction ?? FlavorInteractionSystem.Default;
         _flavorConfig = flavorConfig ?? FlavorConfig.Default;
+        _professionHooks = professionHooks;
     }
 
     public GameState GameState => _gameState;
@@ -56,6 +62,8 @@ public class PotController
 
         // F4：把本锅生效的配置注入 PotState，使结算 / 预览 / 动词超频读取同一份配置。
         pot.Config = _flavorConfig;
+        // 丰盛门槛由配置驱动（默认 2）；职业规则钩子可在其后覆盖（如鲜职业放宽为 1）。
+        pot.AbundanceFlavorTypeRequirement = _flavorConfig.AbundanceFlavorTypeRequirement;
         // 记录最终锅标记：HeatVerb / ScoreCalculator 据此跳过余温（设计文档 §24.2）。
         pot.IsFinalPot = _gameState.Run.IsFinalPot;
 
@@ -72,6 +80,12 @@ public class PotController
 
         pot.Phase = PotPhase.InProgress;
         _gameState.Bottom.ApplyToPot(pot);
+
+        // 职业起手规则：在锅底注入之后、本锅首次结算之前执行一次（注入状态 + 覆盖规则参数）。
+        ProfessionSystem.ApplyPotStart(_professionHooks, pot, _gameState.Player, _gameState.Bottom);
+
+        // 职业动词联动：挑出实现 IProfessionVerbHook 的那个注入本锅（无则不注入）。
+        pot.VerbLink = ProfessionSystem.FindVerbHook(_professionHooks);
     }
 
     /// <summary>

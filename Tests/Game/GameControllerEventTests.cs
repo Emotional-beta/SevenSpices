@@ -98,7 +98,7 @@ public static class GameControllerEventTests
 
     // ── 测试 ─────────────────────────────────────────────────────────────────
 
-    /// <summary>StartNewGame → PotStarted → BowlStarted → IngredientDrawn，且只发布这三个。</summary>
+    /// <summary>StartNewGame → ProfessionChosen → PotStarted → BowlStarted → IngredientDrawn，且只发布这四个。</summary>
     static void Test_StartNewGame_PublishesPotBowlDrawnInOrder()
     {
         var gc = new GameController(new GameState(), NoRare(), new Random(3001));
@@ -107,19 +107,20 @@ public static class GameControllerEventTests
 
         gc.StartNewGame();
 
-        Assert(log.Events.Count == 3, $"StartNewGame 应恰好发布 3 个事件，实际 {log.Events.Count}");
-        Assert(log.Events[0] is PotStartedEvent, "第 1 个事件应为 PotStartedEvent");
-        Assert(log.Events[1] is BowlStartedEvent, "第 2 个事件应为 BowlStartedEvent");
-        Assert(log.Events[2] is IngredientDrawnEvent, "第 3 个事件应为 IngredientDrawnEvent");
+        Assert(log.Events.Count == 4, $"StartNewGame 应恰好发布 4 个事件，实际 {log.Events.Count}");
+        Assert(log.Events[0] is ProfessionChosenEvent, "第 1 个事件应为 ProfessionChosenEvent");
+        Assert(log.Events[1] is PotStartedEvent, "第 2 个事件应为 PotStartedEvent");
+        Assert(log.Events[2] is BowlStartedEvent, "第 3 个事件应为 BowlStartedEvent");
+        Assert(log.Events[3] is IngredientDrawnEvent, "第 4 个事件应为 IngredientDrawnEvent");
 
-        var pot = (PotStartedEvent)log.Events[0];
+        var pot = (PotStartedEvent)log.Events[1];
         Assert(pot.Chapter == 1 && pot.PotIndex == 1 && !pot.IsFinalPot,
             "PotStartedEvent 应携带第 1 章第 1 锅且非最终锅");
 
-        var bowl = (BowlStartedEvent)log.Events[1];
+        var bowl = (BowlStartedEvent)log.Events[2];
         Assert(bowl.BowlNumber == 1, "BowlStartedEvent 应携带第 1 碗");
 
-        var drawn = (IngredientDrawnEvent)log.Events[2];
+        var drawn = (IngredientDrawnEvent)log.Events[3];
         Assert(drawn.Candidates.Count == 3, "IngredientDrawnEvent 应携带 3 个候选");
     }
 

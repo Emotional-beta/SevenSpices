@@ -37,6 +37,7 @@ public static class CompanionFlowTests
     /// <summary>把食材篮固定为若干米饭，避免随机食材效果干扰分数断言。</summary>
     static void FillBasketWithRice(GameState state, int count)
     {
+        state.Player.IngredientBasket.Clear();
         for (int i = 0; i < count; i++)
             state.Player.IngredientBasket.Add(new IngredientInstance(IngredientData.Rice));
     }
@@ -89,10 +90,13 @@ public static class CompanionFlowTests
         CompanionDefinition reward, out GameState state, int seed)
     {
         state = new GameState();
-        FillBasketWithRice(state, 3);
         var config = ConfigWithRare(new[] { 1 }, MakeRareWithCompanion(reward));
         var gc = new GameController(state, config, new Random(seed), shop: NoShop());
         gc.StartNewGame();
+
+        // StartNewGame 会重置为初始食材篮；重置后换成本用例的固定米饭篮并重启本锅。
+        FillBasketWithRice(state, 3);
+        gc.StartCurrentPot();
 
         Assert(gc.CurrentCustomer != null && gc.CurrentCustomer.Definition.IsRare,
             "第 1 碗应指派稀有食客");
@@ -223,10 +227,13 @@ public static class CompanionFlowTests
     {
         var reward = CompanionData.GenerousGuestCompanion;
         var state = new GameState();
-        FillBasketWithRice(state, 3);
         var config = ConfigWithRare(new[] { 1, 2 }, MakeRareWithCompanion(reward));
         var gc = new GameController(state, config, new Random(7006));
         gc.StartNewGame();
+
+        // StartNewGame 会重置为初始食材篮；重置后换成本用例的固定米饭篮并重启本锅。
+        FillBasketWithRice(state, 3);
+        gc.StartCurrentPot();
 
         gc.SelectIngredient(gc.CurrentCandidates[0].InstanceId); // 第 1 碗满意
         Assert(gc.Pot.BowlNumber == 2, "应已进入第 2 碗");

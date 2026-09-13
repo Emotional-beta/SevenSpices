@@ -9,7 +9,7 @@ namespace SevenSpices.Tests.Game;
 
 /// <summary>
 /// A5 道具系统流程测试。
-/// 覆盖：开局随机 1 个道具、IngredientSelection/ItemPhase 使用、每碗无限用、消耗语义、
+/// 覆盖：开局职业专属 1 个道具、IngredientSelection/ItemPhase 使用、每碗无限用、消耗语义、
 /// TotalBaseScore 计入道具加分、最终锅禁用、稀有食客满意掉道具、跨锅保留、PotController 阶段放宽。
 /// 全部使用固定种子保证可复现。
 /// </summary>
@@ -17,7 +17,7 @@ public static class ItemFlowTests
 {
     public static void RunAll()
     {
-        Test_StartNewGame_GivesOneRandomItem();
+        Test_StartNewGame_GivesProfessionStarterItem();
         Test_UseItem_InIngredientSelection_AppliesEffectAndRemoves();
         Test_UseItem_Salt_AddsToTotalBaseScore();
         Test_UseItem_ConsumedOnlyOnce();
@@ -64,6 +64,10 @@ public static class ItemFlowTests
         // 普通锅结束后商店会营业并门控推进；本辅助跳过，聚焦被测流程。
         if (gc.IsShopOpen)
             gc.SkipShop();
+
+        // 每章第 3 锅商店后会出现路线选择并门控推进；本辅助跳过（自动吃保底）。
+        if (gc.IsAwaitingRouteChoice)
+            gc.SkipRoute();
     }
 
     /// <summary>推进 RunController 经过全部普通锅，进入最终锅。</summary>
@@ -87,8 +91,8 @@ public static class ItemFlowTests
 
     // ── 测试 ─────────────────────────────────────────────────────────────────
 
-    /// <summary>1. StartNewGame 后恰好拥有 1 个道具，且来自正式 Registry。</summary>
-    static void Test_StartNewGame_GivesOneRandomItem()
+    /// <summary>1. StartNewGame 后恰好拥有 1 个道具，且为默认职业的专属道具（不进正式随机 Registry）。</summary>
+    static void Test_StartNewGame_GivesProfessionStarterItem()
     {
         var gc = new GameController(new GameState(), NoRare(), new Random(1000));
         gc.StartNewGame();
@@ -97,8 +101,12 @@ public static class ItemFlowTests
         Assert(gc.Items.Count == 1, "GameController.Items 应反映开局道具");
 
         var id = gc.Items[0].Definition.Id;
-        Assert(ItemData.Registry.GetAll().Any(d => d.Id == id),
-            $"开局道具应来自 ItemData.Registry，实际 id={id}");
+        Assert(id == ProfessionConfig.Default.StarterItemId,
+            $"开局道具应为默认职业专属道具 '{ProfessionConfig.Default.StarterItemId}'，实际 id={id}");
+        Assert(ItemData.ProfessionRegistry.GetAll().Any(d => d.Id == id),
+            $"开局道具应来自 ItemData.ProfessionRegistry，实际 id={id}");
+        Assert(!ItemData.Registry.GetAll().Any(d => d.Id == id),
+            "职业专属道具不应混入正式随机 Registry");
     }
 
     /// <summary>2. IngredientSelection 阶段可用：味道生效、实例被移除。</summary>

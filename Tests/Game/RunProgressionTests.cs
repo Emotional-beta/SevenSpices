@@ -54,6 +54,10 @@ public static class RunProgressionTests
         // 普通锅结束后商店会营业并门控推进；本辅助跳过，聚焦被测流程。
         if (gc.IsShopOpen)
             gc.SkipShop();
+
+        // 每章第 3 锅商店后会出现路线选择并门控推进；本辅助跳过（自动吃保底）。
+        if (gc.IsAwaitingRouteChoice)
+            gc.SkipRoute();
     }
 
     /// <summary>
@@ -84,10 +88,13 @@ public static class RunProgressionTests
     static void Test_NormalPotEnd_ExtractsBottom_And_CanAdvance()
     {
         var state = new GameState();
-        FillBasketWithSalty(state, 10);
 
         var gc = new GameController(state, random: new Random(7));
         gc.StartNewGame();
+
+        // StartNewGame 会重置为初始食材篮；重置后换成本用例的固定咸味篮并重启本锅。
+        FillBasketWithSalty(state, 10);
+        gc.StartCurrentPot();
 
         Assert(gc.Pot.Phase == PotPhase.InProgress, "开局锅应 InProgress");
         Assert(!gc.CanAdvanceToNextPot, "锅进行中不应可推进");
@@ -155,10 +162,14 @@ public static class RunProgressionTests
     static void Test_PotEnd_ExtractIsNotRepeated()
     {
         var state = new GameState();
-        FillBasketWithSalty(state, 10);
 
         var gc = new GameController(state, random: new Random(13));
         gc.StartNewGame();
+
+        // StartNewGame 会重置为初始食材篮；重置后换成本用例的固定咸味篮并重启本锅。
+        FillBasketWithSalty(state, 10);
+        gc.StartCurrentPot();
+
         FinishCurrentPot(gc);
 
         int saltyAfterFirst = state.Bottom.GetFlavor(FlavorType.Salty);

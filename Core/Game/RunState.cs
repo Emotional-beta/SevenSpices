@@ -14,8 +14,26 @@ public class RunState
     /// <summary>是否进入最终锅。</summary>
     public bool IsFinalPot { get; set; }
 
-    /// <summary>当前选择的路线 ID（Phase 4 填充）。</summary>
+    /// <summary>
+    /// 当前生效的餐饮风潮 Id（对应 <c>RouteConfig</c> 的风潮池）；无风潮时为 null。
+    /// <para>
+    /// 只有 <c>RouteKind.FlavorTrend</c> 路线会写入本字段；保底路线立即发放收益，
+    /// 不写风潮状态。到期（跨过 <see cref="RouteActiveChapter"/>）后由 GameController 清除。
+    /// </para>
+    /// </summary>
     public string? RouteId { get; set; }
+
+    /// <summary>
+    /// 当前风潮生效的章节（无风潮时为 0）。
+    /// 选择风潮时写入「生效章节」，<c>AdvanceToNextPot</c> 推进章节后若已越过则清除风潮。
+    /// </summary>
+    public int RouteActiveChapter { get; set; }
+
+    /// <summary>
+    /// 本局选择的职业 ID（对应 <c>ProfessionConfig</c>）；新局开始时由 GameController 写入，
+    /// <c>RunController.StartRun</c> 复位为 null。供起始套装与起手规则读取。
+    /// </summary>
+    public string? ProfessionId { get; set; }
 
     /// <summary>章末 Boss（饕餮）与最终锅真身的验收记录（按触发顺序）。</summary>
     public List<ChapterBossRecord> ChapterBossRecords { get; } = new();

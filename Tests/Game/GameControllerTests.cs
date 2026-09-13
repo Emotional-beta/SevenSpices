@@ -36,7 +36,7 @@ public static class GameControllerTests
     static IngredientInstance FirstRiceCandidate(GameController gc)
     {
         var rice = gc.CurrentCandidates.FirstOrDefault(c => c.Definition.Id == "rice");
-        Assert(rice != null, "候选中应存在米饭（初始池有 5 米饭 + 1 辣椒）");
+        Assert(rice != null, "候选中应存在米饭（初始池有 5 米饭 + 1 职业专属食材）");
         return rice!;
     }
 
@@ -66,6 +66,10 @@ public static class GameControllerTests
         // 普通锅结束后商店会营业并门控推进；本辅助跳过，聚焦被测流程。
         if (gc.IsShopOpen)
             gc.SkipShop();
+
+        // 每章第 3 锅商店后会出现路线选择并门控推进；本辅助跳过（自动吃保底）。
+        if (gc.IsAwaitingRouteChoice)
+            gc.SkipRoute();
     }
 
     /// <summary>推进 RunController 走完全部9锅普通锅（空锅），进入 Final Pot。</summary>
@@ -89,7 +93,7 @@ public static class GameControllerTests
 
     // ── 测试 ─────────────────────────────────────────────────────────────────
 
-    /// <summary>StartNewGame 后应建立初始篮（5 米饭 + 1 辣椒）、本锅池并抽到 3 个候选。</summary>
+    /// <summary>StartNewGame 后应建立初始篮（5 米饭 + 1 默认职业专属食材）、本锅池并抽到 3 个候选。</summary>
     static void Test_StartNewGame_InitialState()
     {
         var gc = new GameController();
@@ -102,7 +106,8 @@ public static class GameControllerTests
 
         Assert(gc.Player.IngredientBasket.Count == 6, "初始食材篮应为 6");
         Assert(gc.Player.IngredientBasket.Count(i => i.Definition.Id == "rice") == 5, "初始篮应有 5 个米饭");
-        Assert(gc.Player.IngredientBasket.Count(i => i.Definition.Id == "pepper") == 1, "初始篮应有 1 个辣椒");
+        Assert(gc.Player.IngredientBasket.Count(i => i.Definition.Id == "pickled_bamboo") == 1,
+            "初始篮应有 1 个默认职业（酸·江湖野厨）专属食材");
 
         Assert(gc.CurrentCandidates.Count == 3, "应抽到 3 个候选");
         Assert(gc.CanSelectIngredient, "StartNewGame 后 CanSelectIngredient 应为 true");
@@ -349,17 +354,22 @@ public static class GameControllerTests
     /// <summary>
     /// FlavorConfig 可从真实入口注入并生效：篮中仅有糖时选中加糖，
     /// 注入 SweetDuplicateAmount=2 后甜·复制应 +2（甜 1 → 3），证明配置贯通到真实结算路径。
+    /// 使用「鲜·御膳房清厨」（开局不注入味道、无动词联动），保证锅内初始为空。
     /// </summary>
     static void Test_FlavorConfig_InjectedThroughGameController_AffectsDuplicate()
     {
         var state = new GameState();
-        state.Player.IngredientBasket.Add(IngredientData.CreateInstance("sugar"));
 
         var appearance = new CustomerAppearanceConfig { RareBowlNumbers = Array.Empty<int>() };
         var gc = new GameController(
             state, appearance, new Random(1),
             flavorConfig: new FlavorConfig { SweetDuplicateAmount = 2 });
-        gc.StartNewGame();
+        gc.StartNewGame("umami");
+
+        // StartNewGame 现在一律重置为初始食材篮；本用例只用糖，重置后改篮并重启本锅。
+        state.Player.IngredientBasket.Clear();
+        state.Player.IngredientBasket.Add(IngredientData.CreateInstance("sugar"));
+        gc.StartCurrentPot();
 
         Assert(gc.CurrentCandidates.Count == 1, "篮中仅有糖时应抽到 1 个候选");
         Assert(gc.CurrentCandidates[0].Definition.Id == "sugar", "候选应为糖");

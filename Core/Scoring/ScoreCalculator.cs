@@ -73,8 +73,9 @@ public static class ScoreCalculator
 
     /// <summary>
     /// 杂·丰盛倍率（F4）：按当前激活味道种类数计算全锅分数乘算系数。
-    /// <c>种类数 &gt;= 2 ? min(1 + AbundancePerType × (种类数-1), AbundanceMaxMultiplier) : 1</c>。
-    /// 0 / 1 种味道时均为 1（无加成）。
+    /// <c>种类数 &gt;= 门槛 ? min(1 + AbundancePerType × (种类数 - 门槛 + 1), AbundanceMaxMultiplier) : 1</c>。
+    /// 门槛默认为 2，此时 <c>种类数 - 2 + 1 = 种类数 - 1</c>，与旧公式逐位相同；
+    /// 职业（如「鲜·御膳房清厨」）把门槛放宽到 1 后，恰好 1 种味道也能得到加成。
     /// </summary>
     public static double GetAbundanceMultiplier(PotState pot)
     {
@@ -85,11 +86,13 @@ public static class ScoreCalculator
             return 1.0;
 
         int typeCount = pot.ActiveFlavorTypeCount;
-        if (typeCount < 2)
+        // 防御 0 / 负数门槛：保证空锅（0 种味道）绝不会被误判为丰盛。
+        int requirement = Math.Max(1, pot.AbundanceFlavorTypeRequirement);
+        if (typeCount < requirement)
             return 1.0;
 
         var config = pot.Config;
-        double multiplier = 1.0 + config.AbundancePerType * (typeCount - 1);
+        double multiplier = 1.0 + config.AbundancePerType * (typeCount - requirement + 1);
         return Math.Min(multiplier, config.AbundanceMaxMultiplier);
     }
 

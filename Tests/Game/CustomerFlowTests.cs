@@ -59,6 +59,10 @@ public static class CustomerFlowTests
         // 普通锅结束后商店会营业并门控推进；本辅助跳过，聚焦被测流程。
         if (gc.IsShopOpen)
             gc.SkipShop();
+
+        // 每章第 3 锅商店后会出现路线选择并门控推进；本辅助跳过（自动吃保底）。
+        if (gc.IsAwaitingRouteChoice)
+            gc.SkipRoute();
     }
 
     /// <summary>推进恰好一碗（能选就选、池空就跳），供逐碗断言使用。</summary>

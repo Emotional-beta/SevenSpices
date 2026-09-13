@@ -37,6 +37,18 @@ public class IngredientRegistry
     }
 
     /// <summary>
+    /// 按 Id 查询 IngredientDefinition；id 为空 / 未注册时返回 null（用于存档恢复等「非致命」查找）。
+    /// 与 <see cref="Get"/> 不同，未命中不抛异常。
+    /// </summary>
+    public IngredientDefinition? Find(string? id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+            return null;
+
+        return _defs.TryGetValue(id, out var def) ? def : null;
+    }
+
+    /// <summary>
     /// 返回所有已注册的 IngredientDefinition，顺序与构造时传入顺序一致。
     /// </summary>
     public IReadOnlyList<IngredientDefinition> GetAll() =>

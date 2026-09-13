@@ -1,5 +1,6 @@
 using SevenSpices.Core.Content;
 using SevenSpices.Core.Ingredients;
+using SevenSpices.Core.Professions;
 
 namespace SevenSpices.Core.Game;
 
@@ -27,6 +28,20 @@ public class PotState
     /// 避免公式漂移；已纳入快照（PotStateSnapshot）与 <see cref="Reset"/>。
     /// </summary>
     public FlavorConfig Config { get; set; } = FlavorConfig.Default;
+
+    /// <summary>
+    /// F4 杂·丰盛倍率的味道种类门槛：激活味道种类数 &gt;= 本值时才计算丰盛倍率。
+    /// 默认取自 <see cref="FlavorConfig.Default"/> 的 <see cref="FlavorConfig.AbundanceFlavorTypeRequirement"/>（2）；
+    /// 可由职业规则钩子（如「鲜·御膳房清厨」）覆盖，<see cref="Reset"/> 从 <see cref="Config"/> 复位。
+    /// </summary>
+    public int AbundanceFlavorTypeRequirement { get; set; } =
+        FlavorConfig.Default.AbundanceFlavorTypeRequirement;
+
+    /// <summary>
+    /// 本锅生效的职业动词联动钩子（开锅时由 PotController 从职业 hooks 中挑出注入，
+    /// <see cref="Reset"/> 清空）。为 null 时互动层行为与无职业完全一致。
+    /// </summary>
+    public IProfessionVerbHook? VerbLink { get; set; }
 
     /// <summary>锅内已累积的食材实例（食材进锅后持续存在直到本锅结束）。</summary>
     public List<IngredientInstance> Ingredients { get; } = new();
@@ -209,6 +224,8 @@ public class PotState
         BowlLimit = bowlLimit;
         IsFinalPot = false;
         Config = FlavorConfig.Default;
+        AbundanceFlavorTypeRequirement = Config.AbundanceFlavorTypeRequirement;
+        VerbLink = null;
         Ingredients.Clear();
         Flavors.Clear();
         FlavorWeights.Clear();

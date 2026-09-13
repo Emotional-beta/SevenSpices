@@ -18,6 +18,7 @@ public static class FlavorEntropyTests
     public static void RunAll()
     {
         Test_Abundance_ByTypeCount_AndCap();
+        Test_AbundanceRequirement_DataDrivenAndDefensive();
         Test_Bland_OnlyOneType_Penalty();
         Test_Specialization_SweetDuplicate_Potency();
         Test_Specialization_BitterAging_Potency();
@@ -108,6 +109,34 @@ public static class FlavorEntropyTests
         pot.AddFlavor(FlavorType.Salty, 1);
         Assert(ScoreCalculator.ComputeFinalScore(pot) == 11,
             "丰盛倍率应纳入最终分：floor((8+2)×1.1) = 11");
+    }
+
+    /// <summary>丰盛门槛已数据驱动：默认取自 FlavorConfig，注入的自定义门槛生效，且 0/负数有下限防御。</summary>
+    static void Test_AbundanceRequirement_DataDrivenAndDefensive()
+    {
+        // 默认：PotState 门槛取自 FlavorConfig.Default。
+        Assert(new PotState().AbundanceFlavorTypeRequirement
+               == FlavorConfig.Default.AbundanceFlavorTypeRequirement,
+            "PotState 默认丰盛门槛应取自 FlavorConfig.Default");
+
+        // 数据驱动：注入自定义门槛后，开锅时真正注入 PotState。
+        MakeControllerAtIngredientResolve(out var state,
+            new FlavorConfig { AbundanceFlavorTypeRequirement = 3 });
+        Assert(state.Pot.AbundanceFlavorTypeRequirement == 3,
+            $"自定义配置门槛应为 3，实际 {state.Pot.AbundanceFlavorTypeRequirement}");
+
+        // 防御 0 / 负数：空锅绝不误判丰盛。
+        var zero = new PotState { AbundanceFlavorTypeRequirement = 0 };
+        AssertClose(ScoreCalculator.GetAbundanceMultiplier(zero), 1.0, "门槛 0 且空锅 → 丰盛 1.0");
+
+        var negative = new PotState { AbundanceFlavorTypeRequirement = -5 };
+        AssertClose(ScoreCalculator.GetAbundanceMultiplier(negative), 1.0, "门槛负数且空锅 → 丰盛 1.0");
+
+        // 门槛 0 且有 1 种味道：钳制为 1 → 1 + 0.1×1 = 1.1。
+        var zeroOne = new PotState { AbundanceFlavorTypeRequirement = 0 };
+        zeroOne.AddFlavor(FlavorType.Sweet, 1);
+        AssertClose(ScoreCalculator.GetAbundanceMultiplier(zeroOne), 1.1,
+            "门槛 0 钳制为 1 → 1 种味道即 1.1");
     }
 
     // ── 2. 寡淡惩罚 ───────────────────────────────────────────────────────────

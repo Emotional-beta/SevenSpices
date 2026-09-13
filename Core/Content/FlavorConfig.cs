@@ -50,6 +50,11 @@ public class FlavorConfig
     /// <summary>杂·丰盛：丰盛倍率的封顶（占位 2.0）。</summary>
     public double AbundanceMaxMultiplier { get; init; } = 2.0;
 
+    /// <summary>
+    /// 杂·丰盛：激活味道种类数达到本值时才计算丰盛倍率（默认 2，即可由职业规则钩子放宽为 1）。
+    /// </summary>
+    public int AbundanceFlavorTypeRequirement { get; init; } = 2;
+
     /// <summary>寡淡：仅 1 种激活味道时全锅分数的乘算惩罚系数（占位 0.9，&lt;1 为轻量减分）。</summary>
     public double BlandPenalty { get; init; } = 0.9;
 

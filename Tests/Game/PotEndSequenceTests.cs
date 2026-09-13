@@ -30,6 +30,7 @@ public static class PotEndSequenceTests
     /// <summary>把食材篮固定为若干米饭，避免随机食材效果干扰流程断言。</summary>
     static void FillBasketWithRice(GameState state, int count)
     {
+        state.Player.IngredientBasket.Clear();
         for (int i = 0; i < count; i++)
             state.Player.IngredientBasket.Add(new IngredientInstance(IngredientData.Rice));
     }
@@ -77,10 +78,13 @@ public static class PotEndSequenceTests
     static GameController SetupPotEndedWithSatisfiedRare(CompanionDefinition reward, int seed)
     {
         var state = new GameState();
-        FillBasketWithRice(state, 3);
         var config = ConfigWithRare(new[] { 1 }, MakeRareWithCompanion(reward));
         var gc = new GameController(state, config, new Random(seed));
         gc.StartNewGame();
+
+        // StartNewGame 会重置为初始食材篮；重置后换成本用例的固定米饭篮并重启本锅。
+        FillBasketWithRice(state, 3);
+        gc.StartCurrentPot();
 
         Assert(gc.CurrentCustomer != null && gc.CurrentCustomer.Definition.IsRare,
             "第 1 碗应指派稀有食客");

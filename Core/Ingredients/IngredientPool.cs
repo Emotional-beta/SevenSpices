@@ -1,3 +1,4 @@
+using SevenSpices.Core.Common;
 using SevenSpices.Core.Ingredients;
 
 namespace SevenSpices.Core.Ingredients;
@@ -29,8 +30,15 @@ public class IngredientPool
     /// 无放回抽取，最多 maxCount 个。不足则全部抽出。
     /// 返回候选列表——调用方必须在选择后调用 Confirm 或 ReturnCandidates。
     /// 同一时间只允许存在一批未结算候选；在 Confirm/ReturnCandidates 之前再次 Draw 会导致上一批候选丢失。
+    /// <para>
+    /// <paramref name="weightSelector"/> 为可选的食材权重函数（路线系统「餐饮风潮」倾斜用）：
+    /// 为 null 或权重全等时走原有 <see cref="Random.Next(int)"/> 路径，随机数消耗与旧行为逐位一致；
+    /// 否则按累积权重法（<see cref="Random.NextDouble"/>）无放回抽取。
+    /// </para>
     /// </summary>
-    public IReadOnlyList<IngredientInstance> Draw(int maxCount = 3)
+    public IReadOnlyList<IngredientInstance> Draw(
+        int maxCount = 3,
+        Func<IngredientDefinition, double>? weightSelector = null)
     {
         if (maxCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(maxCount), "maxCount must be positive.");
@@ -40,9 +48,17 @@ public class IngredientPool
 
         // 无放回：从池中取出放入候选，不重放回直到玩家做出选择
         var available = new List<IngredientInstance>(_instances);
+
+        Func<IngredientInstance, double>? itemWeight = weightSelector == null
+            ? null
+            : instance => weightSelector(instance.Definition);
+        bool weighted = !WeightedRandom.IsUniform(available, itemWeight);
+
         for (int i = 0; i < count; i++)
         {
-            int idx = _random.Next(available.Count);
+            int idx = weighted
+                ? WeightedRandom.PickIndex(available, itemWeight!, _random)
+                : _random.Next(available.Count);
             candidates.Add(available[idx]);
             available.RemoveAt(idx);
         }

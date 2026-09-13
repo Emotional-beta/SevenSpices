@@ -10,6 +10,7 @@ using SevenSpices.Tests.Ingredients;
 using SevenSpices.Tests.Items;
 using SevenSpices.Tests.Pot;
 using SevenSpices.Tests.Run;
+using SevenSpices.Tests.Save;
 using SevenSpices.Tests.Scoring;
 
 namespace SevenSpices.Tests;
@@ -27,9 +28,12 @@ public static class TestRunner
         GameStateTests.RunAll();
         GameControllerTests.RunAll();
         GameControllerEventTests.RunAll();
+        RestartGameTests.RunAll();
+        ProfessionTests.RunAll();
         ItemFlowTests.RunAll();
         CustomerFlowTests.RunAll();
         RunProgressionTests.RunAll();
+        RouteSystemTests.RunAll();
         PotRewardTests.RunAll();
         ShopTests.RunAll();
         EffectSystemTests.RunAll();
@@ -61,6 +65,7 @@ public static class TestRunner
         CompanionDataTests.RunAll();
         CompanionFlowTests.RunAll();
         PotEndSequenceTests.RunAll();
+        SaveSerializerTests.RunAll();
         Console.WriteLine("=== All tests passed. ===");
     }
 }

@@ -72,6 +72,10 @@ public static class ShopTests
         FinishPotResolveRewardAndCompanion(gc);
         if (gc.IsShopOpen)
             gc.SkipShop();
+
+        // 每章第 3 锅商店后会出现路线选择并门控推进；本辅助跳过（自动吃保底）。
+        if (gc.IsAwaitingRouteChoice)
+            gc.SkipRoute();
     }
 
     static int FirstIngredientIndex(GameController gc) =>

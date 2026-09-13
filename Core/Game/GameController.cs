@@ -7,6 +7,7 @@ using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
+using SevenSpices.Core.Save;
 using SevenSpices.Core.Scoring;
 using SevenSpices.Core.Shop;
 
@@ -48,6 +49,13 @@ public class GameController
     private bool _companionResolved;
     private readonly List<ShopOffer> _shopOffers = new();
     private bool _shopResolved;
+
+    // 路线（餐饮风潮）状态：本批候选属于「某一锅的收尾」，随锅重置。
+    private readonly List<RouteDefinition> _routeOffers = new();
+    private bool _routeResolved;
+
+    // 本锅生效的食材权重函数（由当前风潮决定；无风潮时为 null，抽取走均匀路径）。
+    private Func<IngredientDefinition, double>? _ingredientWeightSelector;
 
     /// <summary>饕餮 Boss 静态配置的唯一真源（与 CustomerData / ItemData 读取的是同一份）。</summary>
     private static BossConfig Boss => BossConfig.Default;
@@ -120,7 +128,8 @@ public class GameController
         && !_state.Run.IsFailed
         && (_rewardResolved || _rewardCandidates.Count == 0)
         && (_companionResolved || _companionCandidates.Count == 0)
-        && (_shopResolved || _shopOffers.Count == 0);
+        && (_shopResolved || _shopOffers.Count == 0)
+        && (_routeResolved || _routeOffers.Count == 0);
 
     /// <summary>普通锅结束时的 X 选 1 奖励候选（未进入奖励态时为空）。只读。</summary>
     public IReadOnlyList<IngredientInstance> RewardCandidates => _rewardCandidates;
@@ -185,6 +194,31 @@ public class GameController
     public bool CanSkipShop => IsShopOpen;
 
     /// <summary>
+    /// 监味星君本批提供的路线候选（1 保底 + 2 风潮；未进入路线态时为空）。只读。
+    /// 锅结束流程严格串行：奖励 → 伙伴 → 商店 → 路线。
+    /// </summary>
+    public IReadOnlyList<RouteDefinition> RouteOffers => _routeOffers;
+
+    /// <summary>
+    /// 是否正在等待玩家选择路线：普通锅、锅已 Ended、奖励 / 伙伴 / 商店均已结算、尚未处理、
+    /// 且有候选。锅结束流程的最后一步（设计文档 §二十三）。
+    /// </summary>
+    public bool IsAwaitingRouteChoice =>
+        !_state.Run.IsFinalPot
+        && _state.Pot.Phase == PotPhase.Ended
+        && (_rewardResolved || _rewardCandidates.Count == 0)
+        && (_companionResolved || _companionCandidates.Count == 0)
+        && (_shopResolved || _shopOffers.Count == 0)
+        && !_routeResolved
+        && _routeOffers.Count > 0;
+
+    /// <summary>兼容别名：语义等同 <see cref="IsAwaitingRouteChoice"/>，供表现层候选按钮守卫使用。</summary>
+    public bool CanChooseRoute => IsAwaitingRouteChoice;
+
+    /// <summary>是否允许跳过路线：等待选择时可跳过；跳过 = 自动执行本批候选里的保底项。</summary>
+    public bool CanSkipRoute => IsAwaitingRouteChoice;
+
+    /// <summary>
     /// 是否允许购买指定报价：商店正在营业、索引合法、该件未购买、且金币足够。
     /// </summary>
     public bool CanBuy(int offerIndex)
@@ -235,20 +269,67 @@ public class GameController
     public bool CanAddIngredient => CanSelectIngredient;
 
     /// <summary>
-    /// 开始一局新游戏：启动 Run；若食材篮为空则填入初始套装；
-    /// 若尚无道具则随机给 1 个初始道具；随后启动第 1 锅。
+    /// 开始一局全新游戏：对同一 <see cref="GameState"/> 反复调用都得到干净新局。
+    /// <list type="number">
+    /// <item>回收上一局未使用的仙丹粉末（放回局外 <see cref="Meta"/>，至多 1 个）；</item>
+    /// <item>重置 RunState；</item>
+    /// <item>写入本局职业（<paramref name="professionId"/> 为 null 时用 <see cref="ProfessionConfig.Default"/>）；</item>
+    /// <item>重置玩家资源（金币 / 食材篮 / 道具 / 伙伴）与锅底，发放职业起始套装；</item>
+    /// <item>发放局外保有的 1 份仙丹粉末到本局道具栏；</item>
+    /// <item>发布 <see cref="ProfessionChosenEvent"/> 并启动第 1 锅。</item>
+    /// </list>
     /// </summary>
-    public void StartNewGame()
+    /// <param name="professionId">本局职业 Id；null 表示使用默认职业。</param>
+    public void StartNewGame(string? professionId = null)
     {
+        // 1. 回收上一局未使用的仙丹粉末：局内没用掉的带回局外，供本局再次发放。
+        RecycleImmortalPowders();
+
+        // null → 默认职业兜底；非法 Id 由 ProfessionConfig.Get 抛出（配置错误尽早暴露）。
+        var profession = professionId is null
+            ? ProfessionConfig.Default
+            : ProfessionConfig.Get(professionId);
+
         _runController.StartRun();
+        _state.Run.ProfessionId = profession.Id;
 
-        if (_state.Player.IngredientBasket.Count == 0)
-            _state.Player.IngredientBasket.AddRange(IngredientData.CreateInitialBasket());
+        // 2. 无论上一局残留什么，一律重置为干净初始状态。
+        _state.Player.Gold = 0;
+        _state.Player.IngredientBasket.Clear();
+        _state.Player.IngredientBasket.AddRange(IngredientData.CreateInitialBasket(profession));
+        _state.Player.Items.Clear();
+        _state.Player.Items.Add(ItemData.CreateProfessionItem(profession.Id));
+        _state.Player.Companions.Clear();
+        _state.Bottom.Clear();
 
-        if (_state.Player.Items.Count == 0)
-            _state.Player.Items.AddRange(ItemData.CreateInitialItems(_random));
+        // 3. 发放局外那 1 份仙丹粉末：本局可当作普通道具使用，用完即消耗。
+        var powder = Meta.ConsumeImmortalPowder();
+        if (powder != null)
+            _state.Player.Items.Add(powder);
+
+        _events.Publish(new ProfessionChosenEvent(profession.Id));
 
         StartCurrentPot();
+    }
+
+    /// <summary>
+    /// 回收上一局道具栏中未使用的仙丹粉末到 <see cref="Meta"/>（上限 1）。
+    /// 先回收再发放，保证重复调用 <see cref="StartNewGame"/> 幂等且不产生重复。
+    /// </summary>
+    private void RecycleImmortalPowders()
+    {
+        for (int i = _state.Player.Items.Count - 1; i >= 0; i--)
+        {
+            var item = _state.Player.Items[i];
+            if (item.Definition.Id != ItemData.ImmortalPowderId)
+                continue;
+
+            _state.Player.Items.RemoveAt(i);
+            if (!Meta.TryAddImmortalPowder(item))
+            {
+                // Meta 已满（上限 1）：本实例与 Meta 中那份等价（同为仙丹粉末），净结果仍保 1 份。
+            }
+        }
     }
 
     /// <summary>
@@ -312,6 +393,9 @@ public class GameController
         _pool = new IngredientPool(_state.Player.IngredientBasket, _random);
         _candidates.Clear();
 
+        // 本锅生效的食材权重函数在开锅时按当前风潮算定（本章内不变）。
+        _ingredientWeightSelector = BuildIngredientWeightSelector();
+
         // 奖励状态按「本锅」重置：候选与已选定标记都属于上一锅的收尾。
         _rewardCandidates.Clear();
         _rewardResolved = false;
@@ -324,6 +408,10 @@ public class GameController
         _shopOffers.Clear();
         _shopResolved = false;
 
+        // 路线状态同样按「本锅」重置：候选与已选择标记都属于上一锅的收尾。
+        _routeOffers.Clear();
+        _routeResolved = false;
+
         // 最终锅不逐碗指派食客：整锅由 EndCooking 用饕餮真身一次性结算。
         if (!_state.Run.IsFinalPot)
             AssignCustomerForBowl();
@@ -332,6 +420,61 @@ public class GameController
 
         DrawCandidates();
         _events.Publish(new IngredientDrawnEvent(_candidates));
+    }
+
+    /// <summary>
+    /// 抓取当前游戏状态为存档 DTO（架构 §25）。只抓取 Run / Player / Bottom / Meta，
+    /// 锅内运行时进度不在范围内。
+    /// </summary>
+    public SaveData CaptureSave() => SaveSerializer.Capture(_state, Meta);
+
+    /// <summary>
+    /// 从存档 DTO 恢复本局。
+    /// <list type="number">
+    /// <item>先把 DTO 写回 GameState / MetaState（缺 Definition / 非法内容会显式抛异常）；</item>
+    /// <item>清空本局运行时状态（候选 / 池 / 奖励 / 伙伴 / 商店 / 路线 / 权重），使后续重建不受旧引用影响；</item>
+    /// <item>未失败则调用 <see cref="StartCurrentPot"/> 从「当前锅开头」重新开始
+    /// （锅底、职业起手、风潮权重均按恢复后的 RunState 自动重建）；</item>
+    /// <item>已失败（章末被吞的终局）则不重新开锅，仅恢复终局状态。</item>
+    /// </list>
+    /// 不改变既有 <see cref="StartNewGame"/> 语义。
+    /// </summary>
+    public void RestoreSave(SaveData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        SaveSerializer.Apply(data, _state, Meta);
+        ResetRuntimeState();
+
+        if (_state.Run.IsFailed)
+        {
+            // 终局：不重开锅。清理残余的锅 / 食客运行时状态，避免表现层读到脏数据。
+            _state.Pot.Reset();
+            _state.Customer.ResetForPot();
+            return;
+        }
+
+        StartCurrentPot();
+    }
+
+    /// <summary>
+    /// 清空本局运行时状态（不进存档的临时字段），供读档后重建。
+    /// 与 <see cref="StartCurrentPot"/> 内的逐项重置一致，额外清空 _potController 与 _pool 引用。
+    /// </summary>
+    private void ResetRuntimeState()
+    {
+        _potController = null;
+        _pool = null;
+        _candidates.Clear();
+        _rewardCandidates.Clear();
+        _rewardResolved = false;
+        _companionCandidates.Clear();
+        _companionResolved = false;
+        _shopOffers.Clear();
+        _shopResolved = false;
+        _routeOffers.Clear();
+        _routeResolved = false;
+        _ingredientWeightSelector = null;
     }
 
     /// <summary>
@@ -350,6 +493,15 @@ public class GameController
                 $"Cannot advance to next pot: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}.");
 
         _runController.AdvanceToNextPot();
+
+        // 风潮到期：跨过生效章节即失效（不做叠加）。第 9 锅末选择的风潮生效章节 == 最终锅所在章，
+        // 因此推进到最终锅时不会被清除。
+        if (_state.Run.RouteId != null && _state.Run.Chapter > _state.Run.RouteActiveChapter)
+        {
+            _state.Run.RouteId = null;
+            _state.Run.RouteActiveChapter = 0;
+        }
+
         StartCurrentPot();
     }
 
@@ -409,6 +561,9 @@ public class GameController
         _rewardResolved = true;
 
         _events.Publish(new RewardChosenEvent(chosen));
+
+        // 若本锅无商店（0 报价）且这是本章最后一锅，路线环节需在前置处理完后补开。
+        MaybeOfferRoute();
     }
 
     /// <summary>
@@ -431,6 +586,8 @@ public class GameController
         _companionResolved = true;
 
         _events.Publish(new CompanionAddedEvent(instance));
+
+        MaybeOfferRoute();
     }
 
     /// <summary>
@@ -448,6 +605,8 @@ public class GameController
         _companionResolved = true;
 
         _events.Publish(new CompanionChoiceSkippedEvent(candidateCount));
+
+        MaybeOfferRoute();
     }
 
     /// <summary>
@@ -502,6 +661,153 @@ public class GameController
         _shopOffers.Clear();
 
         _events.Publish(new ShopSkippedEvent(offerCount));
+
+        // 商店结算后，若到达「每章第 3 锅」的时点，锅结束链最末的路线环节在此开放。
+        MaybeOfferRoute();
+    }
+
+    /// <summary>
+    /// 选定一条路线：风潮写入 <see cref="RunState.RouteId"/> / <see cref="RunState.RouteActiveChapter"/>；
+    /// 保底立即发放收益且不写风潮状态。只能在 <see cref="CanChooseRoute"/> 为真时调用。
+    /// </summary>
+    public void ChooseRoute(string routeId)
+    {
+        if (!CanChooseRoute)
+            throw new InvalidOperationException(
+                $"Cannot choose route: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, " +
+                $"resolved={_routeResolved}, offers={_routeOffers.Count}.");
+
+        var route = _routeOffers.FirstOrDefault(r => r.Id == routeId)
+            ?? throw new ArgumentException($"Route candidate '{routeId}' not found.", nameof(routeId));
+
+        ApplyRoute(route);
+        _routeOffers.Clear();
+        _routeResolved = true;
+
+        _events.Publish(new RouteChosenEvent(route, skipped: false));
+    }
+
+    /// <summary>
+    /// 跳过路线选择：自动执行本批候选里的保底项（不是「什么都不选」）。
+    /// 只能在 <see cref="CanSkipRoute"/> 为真时调用。
+    /// </summary>
+    public void SkipRoute()
+    {
+        if (!CanSkipRoute)
+            throw new InvalidOperationException(
+                $"Cannot skip route: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, " +
+                $"resolved={_routeResolved}, offers={_routeOffers.Count}.");
+
+        // 保底池恒有内容，正常必能取到；池空兜底取本批第一项，保证跳过不空转。
+        var route = _routeOffers.FirstOrDefault(r => r.Kind == RouteKind.Fallback)
+            ?? _routeOffers[0];
+
+        ApplyRoute(route);
+        _routeOffers.Clear();
+        _routeResolved = true;
+
+        _events.Publish(new RouteChosenEvent(route, skipped: true));
+    }
+
+    /// <summary>
+    /// 执行一条路线的即时效果：风潮只写状态（倾斜下一章），保底立即发放金币 / 食材 / 道具。
+    /// 风潮生效章节 = 当前章 + 1（已是最后一章则覆盖最终锅 = 当前章）。
+    /// </summary>
+    private void ApplyRoute(RouteDefinition route)
+    {
+        if (route.Kind == RouteKind.FlavorTrend)
+        {
+            var run = _state.Run;
+            run.RouteId = route.Id;
+            run.RouteActiveChapter = run.Chapter < RunController.ChaptersPerRun
+                ? run.Chapter + 1
+                : run.Chapter;
+            return;
+        }
+
+        if (route.GoldReward > 0)
+            _state.Player.Gold += route.GoldReward;
+
+        if (route.IngredientRewardCount > 0)
+        {
+            foreach (var instance in
+                     IngredientData.CreateRandomInstances(route.IngredientRewardCount, _random))
+            {
+                _state.Player.IngredientBasket.Add(instance);
+            }
+        }
+
+        if (route.ItemRewardCount > 0)
+        {
+            foreach (var instance in
+                     ItemData.CreateRandomInstances(route.ItemRewardCount, _random))
+            {
+                _state.Player.Items.Add(instance);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 到达时点则生成路线候选：非最终锅 + 本锅是本章最后一锅 + 三道前置环节均已结算。
+    /// 幂等：已有候选或已处理时直接返回。生成后由玩家 <see cref="ChooseRoute"/> / <see cref="SkipRoute"/>。
+    /// </summary>
+    private void MaybeOfferRoute()
+    {
+        if (_routeResolved || _routeOffers.Count > 0)
+            return;
+
+        var run = _state.Run;
+        if (run.IsFinalPot || run.IsFailed)
+            return;
+        if (run.PotIndex != RunController.PotsPerChapter)
+            return;
+        if (_state.Pot.Phase != PotPhase.Ended)
+            return;
+        if (!(_rewardResolved || _rewardCandidates.Count == 0))
+            return;
+        if (!(_companionResolved || _companionCandidates.Count == 0))
+            return;
+        if (!(_shopResolved || _shopOffers.Count == 0))
+            return;
+
+        _routeOffers.Clear();
+        _routeOffers.AddRange(DrawRouteCandidates());
+
+        // 池为空导致没有候选时直接视为已处理，避免卡住推进（与奖励 / 商店兜底同理）。
+        if (_routeOffers.Count == 0)
+            _routeResolved = true;
+        else
+            _events.Publish(new RouteOfferedEvent(_routeOffers));
+    }
+
+    /// <summary>
+    /// 抽取本批路线候选：1 个保底（从保底池不重复抽）+ 2 个风潮（从风潮池不重复抽），
+    /// 只用注入的 <see cref="_random"/>，固定种子可复现；同一批候选不重复。
+    /// </summary>
+    private List<RouteDefinition> DrawRouteCandidates()
+    {
+        var offers = new List<RouteDefinition>(
+            RouteConfig.FallbackCandidateCount + RouteConfig.FlavorTrendCandidateCount);
+
+        DrawFromPool(RouteConfig.FallbackPool, RouteConfig.FallbackCandidateCount, offers);
+        DrawFromPool(RouteConfig.FlavorTrendPool, RouteConfig.FlavorTrendCandidateCount, offers);
+
+        return offers;
+    }
+
+    private void DrawFromPool(
+        IReadOnlyList<RouteDefinition> pool,
+        int count,
+        List<RouteDefinition> into)
+    {
+        var remaining = pool.ToList();
+        int take = Math.Min(count, remaining.Count);
+        for (int i = 0; i < take; i++)
+        {
+            int index = _random.Next(remaining.Count);
+            into.Add(remaining[index]);
+            remaining.RemoveAt(index);
+        }
     }
 
     /// <summary>
@@ -563,6 +869,9 @@ public class GameController
         _companionResolved = false;
         _shopOffers.Clear();
         _shopResolved = false;
+
+        _routeOffers.Clear();
+        _routeResolved = false;
 
         // 最终锅由 RunController 内部一次性结算；此处只读取已结算的状态发布事件。
         var pot = _state.Pot;
@@ -669,7 +978,8 @@ public class GameController
             // 显式清空，不依赖 StartCurrentPot 的隐式重置，保证本处加入前候选必为空。
             _rewardCandidates.Clear();
             _rewardCandidates.AddRange(
-                IngredientData.CreateRandomInstances(_potReward.ChoiceCount, _random));
+                IngredientData.CreateRandomInstances(
+                    _potReward.ChoiceCount, _random, _ingredientWeightSelector));
 
             // 边界兜底：注册表为空导致没有候选时直接视为已选定，避免卡住推进。
             // Core 层不引入 Godot / 日志，此处静默处理即可。
@@ -696,7 +1006,8 @@ public class GameController
             // 此分支只在普通锅走到（最终锅不经 FinishBowl），天然不触发最终锅商店。
             _shopOffers.Clear();
             foreach (var ingredient in
-                     IngredientData.CreateRandomInstances(_shopConfig.IngredientOfferCount, _random))
+                     IngredientData.CreateRandomInstances(
+                         _shopConfig.IngredientOfferCount, _random, _ingredientWeightSelector))
             {
                 _shopOffers.Add(new ShopOffer(ingredient, _shopConfig.IngredientPrice));
             }
@@ -716,6 +1027,9 @@ public class GameController
             // 未生成商店（0 报价）时不发布 ShopOfferedEvent：无商店就没有「已开放」的语义。
             if (_shopOffers.Count > 0)
                 _events.Publish(new ShopOfferedEvent(_shopOffers));
+
+            // 锅结束链最末：若三道前置环节均已结算（例如本锅无奖励 / 伙伴 / 商店），补开路线环节。
+            MaybeOfferRoute();
         }
     }
 
@@ -791,8 +1105,9 @@ public class GameController
         bool isRare = customer.Definition.IsRare;
 
         // 稀有食客满意时：食材 + 道具各掉落 1 个；不满意时两者都被丢弃（既有语义）。
+        // 食材掉落受当前风潮倾斜（道具不受影响，接口对齐但路线本阶段不传权重）。
         IngredientInstance? rewardIngredient = isRare
-            ? IngredientData.CreateRandomInstance(_random)
+            ? IngredientData.CreateRandomInstance(_random, _ingredientWeightSelector)
             : null;
         ItemInstance? rewardItem = isRare
             ? ItemData.CreateRandomInstance(_random)
@@ -859,8 +1174,31 @@ public class GameController
         if (_pool == null)
             return;
 
-        _candidates.AddRange(_pool.Draw(DrawCount));
+        _candidates.AddRange(_pool.Draw(DrawCount, _ingredientWeightSelector));
     }
+
+    /// <summary>
+    /// 按当前风潮构造食材权重函数：主题相关食材权重 = min(1 + 系数, 封顶)，其余食材保持 1.0
+    /// （只倾斜不屏蔽）。无风潮 / 保底 / 主题为空时返回 null，抽取走均匀路径（零回归）。
+    /// </summary>
+    private Func<IngredientDefinition, double>? BuildIngredientWeightSelector()
+    {
+        if (!RouteConfig.TryGet(_state.Run.RouteId, out var route)
+            || route.Kind != RouteKind.FlavorTrend
+            || route.Theme == null)
+        {
+            return null;
+        }
+
+        var theme = route.Theme.Value;
+        double themeWeight = Math.Min(1.0 + route.WeightBonus, RouteConfig.WeightCap);
+
+        return definition => IsThemeIngredient(definition, theme) ? themeWeight : 1.0;
+    }
+
+    /// <summary>食材是否「主题相关」：其基础味道字典包含该主题且份数 &gt; 0。</summary>
+    private static bool IsThemeIngredient(IngredientDefinition definition, FlavorType theme) =>
+        definition.Flavors.TryGetValue(theme, out int amount) && amount > 0;
 
     /// <summary>
     /// 从碗的 Start 阶段推进到 IngredientSelection，固定 3 步契约：
@@ -878,5 +1216,17 @@ public class GameController
     /// （测试 / 存档恢复），则基于同一状态惰性创建，不再重复 StartPot。
     /// </summary>
     private PotController EnsurePotController()
-        => _potController ??= new PotController(_state, _companions, flavorConfig: _flavorConfig);
+        => _potController ??= CreatePotController();
+
+    /// <summary>
+    /// 创建当前锅的 PotController，并附带本局职业的窄扩展点（取不到则为空）。
+    /// </summary>
+    private PotController CreatePotController()
+    {
+        var professionHooks = ProfessionConfig.TryGet(_state.Run.ProfessionId, out var profession)
+            ? profession.Hooks
+            : null;
+        return new PotController(
+            _state, _companions, flavorConfig: _flavorConfig, professionHooks: professionHooks);
+    }
 }

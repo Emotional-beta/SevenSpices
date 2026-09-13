@@ -60,6 +60,10 @@ public static class PotRewardTests
         FinishPotWithoutReward(gc);
         Assert(gc.IsAwaitingReward, "FinishPotAndResolveReward: 普通锅结束应处于奖励态");
         gc.ChooseReward(gc.RewardCandidates[0].InstanceId);
+
+        // 每章第 3 锅结束后会出现路线选择并门控推进；本辅助跳过（自动吃保底）。
+        if (gc.IsAwaitingRouteChoice)
+            gc.SkipRoute();
     }
 
     // ── 测试 ─────────────────────────────────────────────────────────────────

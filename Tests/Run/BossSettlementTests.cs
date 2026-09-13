@@ -541,7 +541,7 @@ public static class BossSettlementTests
         return ids;
     }
 
-    /// <summary>走完锅的收尾三道环节：奖励 → 伙伴 → 商店。</summary>
+    /// <summary>走完锅的收尾三道环节：奖励 → 伙伴 → 商店（+ 路线，若到达章末）。</summary>
     static void SettlePot(BossHarness h)
     {
         if (h.Gc.CanChooseReward)
@@ -550,6 +550,10 @@ public static class BossSettlementTests
             h.Gc.SkipCompanionChoice();
         if (h.Gc.IsShopOpen)
             h.Gc.SkipShop();
+
+        // 每章第 3 锅商店后会出现路线选择并门控推进；本辅助跳过（自动吃保底）。
+        if (h.Gc.IsAwaitingRouteChoice)
+            h.Gc.SkipRoute();
     }
 
     // ── B2：章末指派 ─────────────────────────────────────────────────────────

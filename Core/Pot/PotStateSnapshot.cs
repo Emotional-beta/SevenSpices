@@ -27,6 +27,8 @@ internal sealed class PotStateSnapshot : PotState
         snap.CurrentBowlPhase = source.CurrentBowlPhase;
         snap.TotalBaseScore = source.TotalBaseScore;
         snap.Config = source.Config;
+        snap.AbundanceFlavorTypeRequirement = source.AbundanceFlavorTypeRequirement;
+        snap.VerbLink = source.VerbLink;
 
         // F3 跨碗状态：必须深拷贝，否则悬停预测会与真实结算不一致（架构 §32.4）。
         snap.AgingPool = source.AgingPool;
