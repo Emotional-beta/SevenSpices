@@ -1,8 +1,9 @@
 namespace SevenSpices.Core.Game;
 
 /// <summary>
-/// 章末 Boss（饕餮）一次试吃的不可变验收记录。
+/// 饕餮一次试吃的不可变验收记录：既覆盖章末 Boss，也覆盖最终锅真身。
 /// 只保存结果数据，不执行判定逻辑；按触发顺序存放于 <see cref="RunState.ChapterBossRecords"/>。
+/// 用 <see cref="IsFinalPot"/> 区分两类记录。
 /// </summary>
 public class ChapterBossRecord
 {
@@ -27,6 +28,9 @@ public class ChapterBossRecord
     /// <summary>该形态的满意阈值。</summary>
     public int Threshold { get; }
 
+    /// <summary>本次验收是否为最终锅真身：true 表示最终锅真身，false 表示章末 Boss。</summary>
+    public bool IsFinalPot { get; }
+
     public ChapterBossRecord(
         int chapter,
         int potIndex,
@@ -34,7 +38,8 @@ public class ChapterBossRecord
         string bossName,
         bool satisfied,
         int potTotalFinalScore,
-        int threshold)
+        int threshold,
+        bool isFinalPot)
     {
         if (string.IsNullOrWhiteSpace(bossId))
             throw new ArgumentException("ChapterBossRecord BossId cannot be empty.", nameof(bossId));
@@ -48,5 +53,6 @@ public class ChapterBossRecord
         Satisfied = satisfied;
         PotTotalFinalScore = potTotalFinalScore;
         Threshold = threshold;
+        IsFinalPot = isFinalPot;
     }
 }

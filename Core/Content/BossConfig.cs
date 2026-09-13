@@ -18,7 +18,10 @@ public class BossFormConfig
     /// <summary>台词（占位，可调）：毒舌、贪吃、嘴硬心软。</summary>
     public IReadOnlyList<string> Lines { get; init; } = Array.Empty<string>();
 
-    /// <summary>满意赏赐的道具 Id（默认仙丹粉末）。</summary>
+    /// <summary>
+    /// 满意赏赐的道具 Id（默认仙丹粉末）。必须是 <see cref="ItemData.SpecialRegistry"/> 中已注册的 Id
+    /// （当前仅 <see cref="ItemData.ImmortalPowderId"/>），否则结算时会抛异常。
+    /// </summary>
     public string RewardItemId { get; init; } = ItemData.ImmortalPowderId;
 }
 

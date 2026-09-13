@@ -79,7 +79,11 @@ public static class ItemData
 
     /// <summary>创建 1 个仙丹粉末实例（Boss 满意赏赐）。</summary>
     public static ItemInstance CreateImmortalPowder() =>
-        new(SpecialRegistry.Get(ImmortalPowderId));
+        CreateSpecialInstance(ImmortalPowderId);
+
+    /// <summary>从 Boss 专属 Registry（SpecialRegistry）按 ItemDefinition Id 创建实例。Boss 赏赐用。</summary>
+    public static ItemInstance CreateSpecialInstance(string itemId) =>
+        new(SpecialRegistry.Get(itemId));
 
     /// <summary>
     /// 从正式 Registry 的全部道具中随机取一个 Definition 创建实例。

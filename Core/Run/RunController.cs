@@ -63,6 +63,7 @@ public class RunController
         run.ChapterBossRecords.Clear();
         run.IsFailed = false;
         run.FailReason = null;
+        run.Outcome = RunOutcome.Unsettled;
     }
 
     /// <summary>
@@ -143,7 +144,8 @@ public class RunController
     /// <param name="baseGoldReward">普通食客喝粥后的基础金币奖励。</param>
     /// <param name="rewardIngredient">稀有食客满意时的食材奖励（可为 null）。</param>
     /// <param name="rewardItem">稀有食客满意时的道具奖励（可为 null）。</param>
-    public void EndCooking(
+    /// <returns>食客是否满意（普通食客恒为 false）。由调用方（GameController）据以记录结局。</returns>
+    public bool EndCooking(
         CustomerInstance customer,
         int baseGoldReward = 0,
         IngredientInstance? rewardIngredient = null,
@@ -174,10 +176,11 @@ public class RunController
         ctrl.EndPot();
 
         CustomerService.AssignCustomer(_gameState.Customer, customer);
-        CustomerService.EvaluateAndReward(
+        bool satisfied = CustomerService.EvaluateAndReward(
             _gameState.Customer, _gameState.Pot, _gameState.Player,
             baseGoldReward, rewardIngredient, rewardItem);
 
         ctrl.ClosePot();
+        return satisfied;
     }
 }

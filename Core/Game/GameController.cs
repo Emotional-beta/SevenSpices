@@ -324,7 +324,7 @@ public class GameController
         _shopOffers.Clear();
         _shopResolved = false;
 
-        // 最终锅不逐碗指派食客：整锅由 EndCooking 用占位食客一次性结算。
+        // 最终锅不逐碗指派食客：整锅由 EndCooking 用饕餮真身一次性结算。
         if (!_state.Run.IsFinalPot)
             AssignCustomerForBowl();
 
@@ -517,16 +517,44 @@ public class GameController
 
     /// <summary>
     /// 结束煮粥：结算最终锅。只能在最终锅且锅进行中调用。
-    /// 食客与奖励规则尚未接入内容层，暂用正式普通食客数据占位（保持现状）。
+    /// 由饕餮真身试吃，判定结果落库为本局结局（满意＝尚可 / 嫌弃＝重来）；
+    /// 无论哪种，本局都在此结束（轮回），不按失败收口（<see cref="RunState.IsFailed"/> 保持 false）。
     /// </summary>
     public void EndCooking()
     {
+        // 入口守卫：必须在任何副作用之前校验（与本类其它动作方法一致），
+        // 否则非最终锅 / 分数已锁时误调会先兑现陈酿池并发出假的真身遭遇事件。
+        if (!CanEndCooking)
+            throw new InvalidOperationException(
+                $"Cannot end cooking: final={_state.Run.IsFinalPot}, pot={_state.Pot.Phase}.");
+
         // 架构 §32.6 / 设计文档 §24.2：最终锅不逐碗，陈酿池在结算前立即全额兑现，
         // 使其参与随后的分数计算与食客判定。
         EnsurePotController().RealizeAgingPool();
 
-        var customer = CustomerData.CreateNormalInstance();
-        _runController.EndCooking(customer);
+        // 最终锅由饕餮真身试吃：替换普通食客占位，并上报「遭遇」事件。
+        var form = BossConfig.Default.TrueForm;
+        var customer = CustomerData.CreateTaotieInstance(form.Id);
+        // 最终锅整锅作为「一大碗」，BowlNumber 恒为 ScoreCalculator.FinalPotBowlNumber（10）；
+        // 此处并非「第 10 碗」语义，表现层不要据此当成逐碗流程。
+        _events.Publish(new BossEncounteredEvent(
+            form.Id, form.Name, _state.Run.Chapter, _state.Run.PotIndex,
+            _state.Run.IsFinalPot, _state.Pot.BowlNumber));
+
+        // 取用判定返回值（方案 §4.4）：真身判定仍复用 EvaluateAndReward。
+        bool satisfied = _runController.EndCooking(customer);
+
+        // 结局落库：满意 = 尚可，嫌弃 = 重来；无论哪种，本局都在此结束（轮回）。
+        _state.Run.Outcome = satisfied ? RunOutcome.Okay : RunOutcome.Restart;
+
+        bool rewardGranted = false;
+        if (satisfied)
+            rewardGranted = Meta.TryAddImmortalPowder(ItemData.CreateSpecialInstance(form.RewardItemId));
+
+        _state.Run.ChapterBossRecords.Add(new ChapterBossRecord(
+            _state.Run.Chapter, _state.Run.PotIndex, form.Id, form.Name,
+            satisfied, _state.Pot.TotalFinalScore, form.SatisfyThreshold, isFinalPot: true));
+
         _candidates.Clear();
         _pool = null;
         _rewardCandidates.Clear();
@@ -544,6 +572,14 @@ public class GameController
         _events.Publish(new CustomerServedEvent(customer, 0));
         _events.Publish(new PotEndedEvent(
             _state.Run.Chapter, _state.Run.PotIndex, _state.Run.IsFinalPot));
+
+        if (satisfied)
+            _events.Publish(new CustomerSatisfiedEvent(customer));
+
+        _events.Publish(new BossEvaluatedEvent(
+            form.Id, form.Name, _state.Run.Chapter, _state.Run.PotIndex, _state.Run.IsFinalPot,
+            satisfied, form.SatisfyThreshold, pot.TotalFinalScore, rewardGranted));
+
         _events.Publish(new RunCompletedEvent());
     }
 
@@ -792,15 +828,16 @@ public class GameController
 
         run.ChapterBossRecords.Add(new ChapterBossRecord(
             run.Chapter, run.PotIndex, form.Id, form.Name,
-            satisfied, pot.TotalFinalScore, form.SatisfyThreshold));
+            satisfied, pot.TotalFinalScore, form.SatisfyThreshold, isFinalPot: false));
 
         _events.Publish(new CustomerServedEvent(customer, 0));
 
         bool rewardGranted = false;
         if (satisfied)
         {
-            // Boss 专属产出：进跨局容器 MetaState（不进随机掉落 / 商店 / 伙伴）。
-            rewardGranted = Meta.TryAddImmortalPowder(ItemData.CreateImmortalPowder());
+            // Boss 专属产出：按 BossConfig 的 RewardItemId 取道具，进跨局容器 MetaState
+            //（不进随机掉落 / 商店 / 伙伴）。
+            rewardGranted = Meta.TryAddImmortalPowder(ItemData.CreateSpecialInstance(form.RewardItemId));
             _events.Publish(new CustomerSatisfiedEvent(customer));
         }
         else
