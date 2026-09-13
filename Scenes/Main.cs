@@ -2,6 +2,7 @@ using Godot;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
+using SevenSpices.Core.Items;
 using SevenSpices.Core.Scoring;
 
 namespace SevenSpices;
@@ -14,6 +15,8 @@ public partial class Main : Node
     private Label _poolCountLabel = null!;
     private VBoxContainer _rewardSection = null!;
     private HBoxContainer _rewardRow = null!;
+    private Label _itemCountLabel = null!;
+    private HBoxContainer _itemRow = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
@@ -118,6 +121,17 @@ public partial class Main : Node
         var sep2 = new HSeparator();
         sep2.CustomMinimumSize = new Vector2(0, 10);
         vbox.AddChild(sep2);
+
+        vbox.AddChild(MakeLabel("道具（加入食材前使用）", center: true, minHeight: 28));
+
+        _itemCountLabel = MakeLabel("持有道具：0", center: true, minHeight: 28);
+        vbox.AddChild(_itemCountLabel);
+
+        _itemRow = new HBoxContainer();
+        _itemRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _itemRow.AddThemeConstantOverride("separation", 15);
+        _itemRow.CustomMinimumSize = new Vector2(0, 40);
+        vbox.AddChild(_itemRow);
 
         vbox.AddChild(MakeLabel("抽取食材（选择其一加入锅中）", center: true, minHeight: 28));
 
@@ -366,6 +380,7 @@ public partial class Main : Node
 
         RebuildCandidateButtons();
         RebuildRewardSection();
+        RebuildItemSection();
 
         bool runComplete = _controller.IsRunComplete;
         _skipBowlButton.Disabled = runComplete || !_controller.CanSkipBowl;
@@ -430,6 +445,72 @@ public partial class Main : Node
             btn.MouseExited += HideTooltip;
             _rewardRow.AddChild(btn);
         }
+    }
+
+    /// <summary>
+    /// 按当前持有道具重建道具区域（每个道具一个按钮）。
+    /// 表现层只读 Items、只调 GameController.UseItem，不参与流程判断。
+    /// </summary>
+    private void RebuildItemSection()
+    {
+        _itemCountLabel.Text = $"持有道具：{_controller.Items.Count}";
+
+        foreach (Node child in _itemRow.GetChildren())
+        {
+            _itemRow.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        bool canUse = _controller.CanUseItem;
+        foreach (var item in _controller.Items)
+        {
+            var captured = item;
+            var btn = new Button();
+            btn.Text = $"使用：{captured.Definition.Name}";
+            btn.CustomMinimumSize = new Vector2(120, 36);
+            btn.Disabled = !canUse;
+            btn.Pressed += () => OnItemPressed(captured);
+            btn.MouseEntered += () => OnItemHover(captured);
+            btn.MouseExited += HideTooltip;
+            _itemRow.AddChild(btn);
+        }
+    }
+
+    /// <summary>道具按钮点击：只转发 GameController.UseItem，随后刷新。</summary>
+    private void OnItemPressed(ItemInstance item)
+    {
+        if (!_controller.CanUseItem)
+            return;
+
+        _controller.UseItem(item.InstanceId);
+        RefreshUI();
+    }
+
+    private void OnItemHover(ItemInstance item)
+    {
+        _tooltipLabel.Text = BuildItemTooltip(item.Definition);
+
+        _tooltipAnchor = GetViewport().GetMousePosition() + new Vector2(14, 14);
+        _tooltipPanel.Position = _tooltipAnchor;
+        _tooltipPanel.Visible = true;
+        _tooltipNeedsReposition = true;
+    }
+
+    private static string BuildItemTooltip(ItemDefinition def)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"名称：{def.Name}");
+        sb.AppendLine($"类型：道具");
+        if (def.Effects.Count == 0)
+        {
+            sb.Append("效果：无");
+        }
+        else
+        {
+            foreach (var effect in def.Effects)
+                sb.AppendLine(DescribeEffect(effect));
+        }
+        return sb.ToString().TrimEnd();
     }
 
     private static string ToBowlPhaseText(BowlPhase phase) => phase switch

@@ -121,14 +121,16 @@ public class PotController
     }
 
     /// <summary>
-    /// 在 ItemPhase 阶段消耗一个道具。
+    /// 消耗一个道具。合法时机为「加入食材之前」：ItemPhase 或 IngredientSelection
+    /// （设计文档 §十五：必须在加入食材之前使用）。
     /// 从 PlayerState.Items 中移除并返回对应 ItemInstance，不执行任何效果。
     /// </summary>
     public ItemInstance UseItem(string instanceId)
     {
         var pot = _gameState.Pot;
-        if (pot.CurrentBowlPhase != BowlPhase.ItemPhase)
-            throw new InvalidOperationException($"Cannot use item: current bowl phase is {pot.CurrentBowlPhase}, expected ItemPhase.");
+        if (!IsItemUsablePhase(pot.CurrentBowlPhase))
+            throw new InvalidOperationException(
+                $"Cannot use item: current bowl phase is {pot.CurrentBowlPhase}, expected ItemPhase or IngredientSelection.");
 
         if (string.IsNullOrWhiteSpace(instanceId))
             throw new ArgumentException("instanceId cannot be empty.", nameof(instanceId));
@@ -201,7 +203,8 @@ public class PotController
     }
 
     /// <summary>
-    /// 在 ItemPhase 阶段为已消耗的道具触发其效果链。
+    /// 为已消耗的道具触发其效果链。合法时机与 <see cref="UseItem"/> 一致：
+    /// ItemPhase 或 IngredientSelection（加入食材之前，设计文档 §十五）。
     /// 通常在 UseItem() 之后调用。
     /// </summary>
     public void ApplyItemEffect(ItemInstance item, EffectSystem effectSystem)
@@ -210,13 +213,19 @@ public class PotController
         ArgumentNullException.ThrowIfNull(effectSystem);
 
         var pot = _gameState.Pot;
-        if (pot.CurrentBowlPhase != BowlPhase.ItemPhase)
+        if (!IsItemUsablePhase(pot.CurrentBowlPhase))
             throw new InvalidOperationException(
-                $"Cannot apply item effect: current bowl phase is {pot.CurrentBowlPhase}, expected ItemPhase.");
+                $"Cannot apply item effect: current bowl phase is {pot.CurrentBowlPhase}, expected ItemPhase or IngredientSelection.");
 
         var context = new EffectContext(pot.BowlNumber, _gameState, pot, currentIngredient: null);
         effectSystem.TriggerAll(item.Definition.Effects, item.InstanceId, context);
     }
+
+    /// <summary>
+    /// 道具使用时机判定：加入食材之前，即 ItemPhase 或 IngredientSelection。
+    /// </summary>
+    private static bool IsItemUsablePhase(BowlPhase phase) =>
+        phase == BowlPhase.ItemPhase || phase == BowlPhase.IngredientSelection;
 
     /// <summary>
     /// 在 ScoreCalculation 阶段计算并锁定本碗分数。

@@ -2,6 +2,7 @@ using SevenSpices.Core.Content;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Ingredients;
+using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
 
@@ -54,6 +55,9 @@ public class GameController
     public RunState Run => _state.Run;
     public PotState Pot => _state.Pot;
     public PlayerState Player => _state.Player;
+
+    /// <summary>玩家当前持有的道具实例（长期资源，跨碗/跨锅保留）。只读。</summary>
+    public IReadOnlyList<ItemInstance> Items => _state.Player.Items;
 
     /// <summary>当前碗的食客实例（null 表示尚未指派或已结算）。只读。</summary>
     public CustomerInstance? CurrentCustomer => _state.Customer.CurrentCustomer;
@@ -130,7 +134,8 @@ public class GameController
     public bool CanAddIngredient => CanSelectIngredient;
 
     /// <summary>
-    /// 开始一局新游戏：启动 Run；若食材篮为空则填入初始套装；随后启动第 1 锅。
+    /// 开始一局新游戏：启动 Run；若食材篮为空则填入初始套装；
+    /// 若尚无道具则随机给 1 个初始道具；随后启动第 1 锅。
     /// </summary>
     public void StartNewGame()
     {
@@ -139,7 +144,44 @@ public class GameController
         if (_state.Player.IngredientBasket.Count == 0)
             _state.Player.IngredientBasket.AddRange(IngredientData.CreateInitialBasket());
 
+        if (_state.Player.Items.Count == 0)
+            _state.Player.Items.AddRange(ItemData.CreateInitialItems(_random));
+
         StartCurrentPot();
+    }
+
+    /// <summary>
+    /// 当前是否允许使用道具：非最终锅、锅进行中、处于「加入食材之前」的
+    /// ItemPhase 或 IngredientSelection，且玩家持有道具（设计文档 §十五）。
+    /// </summary>
+    public bool CanUseItem =>
+        !IsFinalPot
+        && _state.Pot.Phase == PotPhase.InProgress
+        && (_state.Pot.CurrentBowlPhase == BowlPhase.ItemPhase
+            || _state.Pot.CurrentBowlPhase == BowlPhase.IngredientSelection)
+        && _state.Player.Items.Count > 0;
+
+    /// <summary>
+    /// 使用一个道具：消耗实例并即时触发其效果链。
+    /// 只能在 <see cref="CanUseItem"/> 为真时调用。
+    /// <para>
+    /// 道具带来的分数变化会同步计入本锅累计基础分（<see cref="PotState.TotalBaseScore"/>），
+    /// 避免累计值漏记道具加分（如食盐 +3）。
+    /// </para>
+    /// </summary>
+    public void UseItem(string instanceId)
+    {
+        if (!CanUseItem)
+            throw new InvalidOperationException(
+                $"Cannot use item: final={_state.Run.IsFinalPot}, pot={_state.Pot.Phase}, " +
+                $"bowl={_state.Pot.CurrentBowlPhase}, items={_state.Player.Items.Count}.");
+
+        var potController = EnsurePotController();
+
+        int before = _state.Pot.BaseScore;
+        var item = potController.UseItem(instanceId);
+        potController.ApplyItemEffect(item, _effectSystem);
+        _state.Pot.TotalBaseScore += _state.Pot.BaseScore - before;
     }
 
     /// <summary>
@@ -350,8 +392,12 @@ public class GameController
         if (customer == null)
             return;
 
+        // 稀有食客满意时：食材 + 道具各掉落 1 个；不满意时两者都被丢弃（既有语义）。
         IngredientInstance? rewardIngredient = customer.Definition.IsRare
             ? IngredientData.CreateRandomInstance(_random)
+            : null;
+        ItemInstance? rewardItem = customer.Definition.IsRare
+            ? ItemData.CreateRandomInstance(_random)
             : null;
 
         CustomerService.EvaluateAndReward(
@@ -360,7 +406,7 @@ public class GameController
             _state.Player,
             _appearance.BaseGoldReward,
             rewardIngredient,
-            null);
+            rewardItem);
     }
 
     private void DrawCandidates()

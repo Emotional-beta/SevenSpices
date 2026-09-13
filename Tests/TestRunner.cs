@@ -23,6 +23,7 @@ public static class TestRunner
         IngredientRegistryTests.RunAll();
         GameStateTests.RunAll();
         GameControllerTests.RunAll();
+        ItemFlowTests.RunAll();
         CustomerFlowTests.RunAll();
         RunProgressionTests.RunAll();
         PotRewardTests.RunAll();
