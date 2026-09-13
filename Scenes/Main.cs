@@ -40,6 +40,8 @@ public partial class Main : Node
     private Label _customerLabel = null!;
     private Label _goldLabel = null!;
     private Label _flavorLabel = null!;
+    private Label _flavorEntropyLabel = null!;
+    private Label _flavorStatusLabel = null!;
     private Label _bottomLabel = null!;
     private Label _runCompleteLabel = null!;
     private Button _nextPotButton = null!;
@@ -146,6 +148,12 @@ public partial class Main : Node
         vbox.AddChild(MakeLabel("味道", center: true, minHeight: 28));
         _flavorLabel = MakeLabel("--", center: true, minHeight: 28);
         vbox.AddChild(_flavorLabel);
+
+        _flavorEntropyLabel = MakeLabel("味道种类：0", center: true, minHeight: 28);
+        vbox.AddChild(_flavorEntropyLabel);
+
+        _flavorStatusLabel = MakeLabel("", center: true, minHeight: 28);
+        vbox.AddChild(_flavorStatusLabel);
 
         _bottomLabel = MakeLabel("锅底：--", center: true, minHeight: 28);
         vbox.AddChild(_bottomLabel);
@@ -475,10 +483,12 @@ public partial class Main : Node
         _bowlLabel.Text = run.IsFinalPot
             ? "最终锅：可无限添加食材"
             : $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
-        _scoreLabel.Text = $"基础分：{(int)Math.Floor(pot.BaseScoreWithFlavor)}";
+        _scoreLabel.Text = $"基础分：{(int)Math.Floor(pot.BaseScoreWithFlavor)}（食材/效果分：{pot.BaseScore}）";
         _flavorScoreLabel.Text = $"味道分：{(int)Math.Floor(pot.FlavorScore)}";
-        int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
-        _multiplierLabel.Text = $"倍率：×{multiplier}";
+        int multiplier = ScoreCalculator.GetEffectiveMultiplier(pot);
+        _multiplierLabel.Text = pot.HeatBowlsRemaining > 0 && pot.HeatBonusTiers > 0
+            ? $"倍率：×{multiplier}（余温 +{pot.HeatBonusTiers} 档，剩 {pot.HeatBowlsRemaining} 碗）"
+            : $"倍率：×{multiplier}";
         _finalScoreLabel.Text = pot.IsScoreLocked
             ? $"最终分数：{pot.FinalScore}"
             : run.IsFinalPot
@@ -494,8 +504,11 @@ public partial class Main : Node
                 : $"当前食客：{customer.Definition.Name}";
         _goldLabel.Text = $"金币：{_controller.Player.Gold}";
 
-        _flavorLabel.Text = $"味道种类：{pot.ActiveFlavorTypeCount}｜{ToFlavorText(pot)}"
-            + (pot.HasOdor ? "｜【臭】" : "");
+        _flavorLabel.Text = ToFlavorText(pot);
+        _flavorEntropyLabel.Text = BuildFlavorEntropyText(pot);
+        string flavorStatus = BuildFlavorStatusText(pot);
+        _flavorStatusLabel.Text = flavorStatus;
+        _flavorStatusLabel.Visible = flavorStatus.Length > 0;
         _bottomLabel.Text = $"锅底：{ToBottomText(_controller.State.Bottom)}";
 
         _poolCountLabel.Text = $"剩余食材池：{_controller.RemainingPoolCount}";
@@ -783,6 +796,36 @@ public partial class Main : Node
         ];
         var parts = System.Array.ConvertAll(flavors, f => $"{f.label} {pot.GetFlavor(f.type)}");
         return string.Join("   ", parts);
+    }
+
+    /// <summary>
+    /// 味道熵提示：丰盛倍率 / 寡淡惩罚 / 臭使丰盛失效。只读 PotState 与 ScoreCalculator，不做流程判断。
+    /// </summary>
+    private static string BuildFlavorEntropyText(PotState pot)
+    {
+        int types = pot.ActiveFlavorTypeCount;
+        if (pot.HasOdor)
+            return $"味道种类：{types}（丰盛失效）";
+        if (types >= 2)
+            return $"味道种类：{types}（丰盛 ×{ScoreCalculator.GetAbundanceMultiplier(pot):0.##}）";
+        if (types == 1)
+            return $"味道种类：1（寡淡 ×{pot.Config.BlandPenalty:0.##}）";
+        return $"味道种类：{types}";
+    }
+
+    /// <summary>
+    /// 状态行：陈酿 / 固化 / 臭，无状态时返回空串（由调用方隐藏整行）。
+    /// </summary>
+    private static string BuildFlavorStatusText(PotState pot)
+    {
+        var parts = new System.Collections.Generic.List<string>();
+        if (pot.AgingPool > 0 || pot.AgingAdds > 0)
+            parts.Add($"陈酿：{(int)Math.Floor(pot.AgingPool)}（第 {pot.AgingAdds} 次）");
+        if (pot.IsSolidified)
+            parts.Add("固化：是");
+        if (pot.HasOdor)
+            parts.Add("【臭】");
+        return string.Join("｜", parts);
     }
 
     private static string ToBottomText(BottomState bottom)
