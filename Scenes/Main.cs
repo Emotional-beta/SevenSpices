@@ -1,5 +1,6 @@
 using Godot;
 using SevenSpices.Core.Companions;
+using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Events;
 using SevenSpices.Core.Game;
@@ -38,12 +39,15 @@ public partial class Main : Node
     private Label _finalScoreLabel = null!;
     private Label _totalScoreLabel = null!;
     private Label _customerLabel = null!;
+    private Label _bossLabel = null!;
+    private Label _bossLineLabel = null!;
+    private Label _bossVerdictLabel = null!;
     private Label _goldLabel = null!;
     private Label _flavorLabel = null!;
     private Label _flavorEntropyLabel = null!;
     private Label _flavorStatusLabel = null!;
     private Label _bottomLabel = null!;
-    private Label _runCompleteLabel = null!;
+    private Label _runEndLabel = null!;
     private Button _nextPotButton = null!;
     private Button _endCookingButton = null!;
 
@@ -138,6 +142,28 @@ public partial class Main : Node
         vbox.AddChild(_totalScoreLabel);
         _customerLabel = MakeLabel("当前食客：--", center: true, minHeight: 28);
         vbox.AddChild(_customerLabel);
+
+        // 饕餮试吃区：仅当前食客是饕餮时显示，文案/台词全部取自 BossConfig。
+        _bossLabel = MakeLabel("饕餮：--", center: true, minHeight: 28);
+        _bossLabel.Visible = false;
+        vbox.AddChild(_bossLabel);
+
+        _bossLineLabel = MakeLabel(string.Empty, center: true, minHeight: 28);
+        _bossLineLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _bossLineLabel.Visible = false;
+        vbox.AddChild(_bossLineLabel);
+
+        // 最近一次试吃判定（章末 Boss / 最终锅真身共用），无记录时隐藏。
+        _bossVerdictLabel = MakeLabel(string.Empty, center: true, minHeight: 28);
+        _bossVerdictLabel.Visible = false;
+        vbox.AddChild(_bossVerdictLabel);
+
+        // 本局终止 / 终局文案：放在信息区靠上位置，避免被长滚动区裁到视口外。
+        _runEndLabel = MakeLabel(string.Empty, center: true, minHeight: 60);
+        _runEndLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _runEndLabel.Visible = false;
+        vbox.AddChild(_runEndLabel);
+
         _goldLabel = MakeLabel("金币：0", center: true, minHeight: 28);
         vbox.AddChild(_goldLabel);
 
@@ -263,10 +289,6 @@ public partial class Main : Node
         _endCookingButton.CustomMinimumSize = new Vector2(220, 40);
         _endCookingButton.Pressed += OnEndCookingPressed;
         vbox.AddChild(_endCookingButton);
-
-        _runCompleteLabel = MakeLabel("本局完成", center: true, minHeight: 40);
-        _runCompleteLabel.Visible = false;
-        vbox.AddChild(_runCompleteLabel);
 
         // tooltip 面板挂到顶层覆盖 Control，脱离 vbox 布局流，
         // 设置 MouseFilter.Ignore 彻底不参与鼠标事件，防止闪烁。
@@ -497,11 +519,33 @@ public partial class Main : Node
         _totalScoreLabel.Text = $"本锅累计基础分：{pot.TotalBaseScore}";
 
         var customer = _controller.CurrentCustomer;
-        _customerLabel.Text = customer == null
-            ? "当前食客：--"
-            : customer.Definition.IsRare
-                ? $"当前食客：{customer.Definition.Name}（稀有）"
-                : $"当前食客：{customer.Definition.Name}";
+        var bossForm = customer != null ? BossConfig.Default.FindForm(customer.Definition.Id) : null;
+
+        // 最终锅不逐碗指派食客，进行中直接展示真身（名称/台词来自 BossConfig.Default.TrueForm）。
+        if (bossForm == null && run.IsFinalPot && pot.Phase == PotPhase.InProgress)
+            bossForm = BossConfig.Default.TrueForm;
+
+        if (customer == null && bossForm != null)
+            _customerLabel.Text = $"当前食客：{bossForm.Name}（最终锅待试）";
+        else if (customer == null)
+            _customerLabel.Text = "当前食客：--";
+        else if (bossForm != null)
+            _customerLabel.Text = $"当前食客：{bossForm.Name}";
+        else if (customer.Definition.IsRare)
+            _customerLabel.Text = $"当前食客：{customer.Definition.Name}（稀有）";
+        else
+            _customerLabel.Text = $"当前食客：{customer.Definition.Name}";
+
+        bool bossPresent = bossForm != null;
+        _bossLabel.Visible = bossPresent;
+        _bossLineLabel.Visible = bossPresent && bossForm!.Lines.Count > 0;
+        if (bossPresent)
+        {
+            _bossLabel.Text = $"饕餮试吃中（达标门槛：本锅累计最终分 ≥ {bossForm!.SatisfyThreshold}）";
+            _bossLineLabel.Text = string.Join("\n", bossForm.Lines);
+        }
+
+        RefreshBossVerdict(run);
         _goldLabel.Text = $"金币：{_controller.Player.Gold}";
 
         _flavorLabel.Text = ToFlavorText(pot);
@@ -519,12 +563,72 @@ public partial class Main : Node
         RebuildCompanionSection();
         RebuildShopSection();
 
-        bool runComplete = _controller.IsRunComplete;
-        _skipBowlButton.Disabled = runComplete || !_controller.CanSkipBowl;
+        bool runOver = _controller.IsRunComplete;
+        _skipBowlButton.Disabled = runOver || !_controller.CanSkipBowl;
         // 奖励未选定时 CanAdvanceToNextPot 为 false，「进入下一锅」自动被门控。
-        _nextPotButton.Disabled = runComplete || !_controller.CanAdvanceToNextPot;
-        _endCookingButton.Disabled = runComplete || !_controller.CanEndCooking;
-        _runCompleteLabel.Visible = runComplete;
+        _nextPotButton.Disabled = runOver || !_controller.CanAdvanceToNextPot;
+        _endCookingButton.Disabled = runOver || !_controller.CanEndCooking;
+
+        RefreshRunEnd(run, pot);
+    }
+
+    /// <summary>
+    /// 最近一次饕餮试吃判定行：只读 Run.ChapterBossRecords，无记录时隐藏。
+    /// 表现层不做判定，满意度与读数均来自记录。
+    /// </summary>
+    private void RefreshBossVerdict(RunState run)
+    {
+        var records = run.ChapterBossRecords;
+        if (records.Count == 0)
+        {
+            _bossVerdictLabel.Visible = false;
+            return;
+        }
+
+        var last = records[records.Count - 1];
+        bool isCurrent = last.Chapter == run.Chapter && last.PotIndex == run.PotIndex;
+        string prefix = (last.IsFinalPot ? "最终试吃" : $"第 {last.Chapter} 章末试吃") + (isCurrent ? "" : "（上一次）");
+        string verdict = last.Satisfied ? "满意" : "嫌弃";
+
+        string text = $"{prefix}：{verdict}（本锅累计最终分 {last.PotTotalFinalScore} ／ 门槛 {last.Threshold}）";
+        if (last.Satisfied)
+            text += $"（跨局保留：仙丹粉末 ×{_controller.Meta.ImmortalPowderCount}）";
+
+        _bossVerdictLabel.Text = text;
+        _bossVerdictLabel.Visible = true;
+    }
+
+    /// <summary>
+    /// 本局收尾文案：先判 <see cref="RunState.IsFailed"/>（章末被吞），再读最终锅结算结局。
+    /// 两者都没有时隐藏该行。
+    /// </summary>
+    private void RefreshRunEnd(RunState run, PotState pot)
+    {
+        if (run.IsFailed)
+        {
+            _runEndLabel.Text = $"【本局终止】你被饕餮一口吞下，投胎重来。\n{run.FailReason}";
+            _runEndLabel.Visible = true;
+            return;
+        }
+
+        if (run.IsFinalPot && pot.Phase == PotPhase.Ended)
+        {
+            string outcomeText = run.Outcome switch
+            {
+                RunOutcome.Okay =>
+                    "【结局：尚可】饕餮满意地打了个嗝，吐出她吃剩的余味。\n" +
+                    $"（跨局保留：仙丹粉末 ×{_controller.Meta.ImmortalPowderCount}）",
+                RunOutcome.Restart =>
+                    "【结局：重来】饕餮嫌弃了你。",
+                _ => "【本局结束】"
+            };
+
+            _runEndLabel.Text = outcomeText + "\n天规如此：无论满意与否，投喂者终被吞下，投胎重来。";
+            _runEndLabel.Visible = true;
+            return;
+        }
+
+        _runEndLabel.Visible = false;
     }
 
     /// <summary>
