@@ -88,8 +88,8 @@ public static class FlavorScoreTests
         var pot = new PotState { BowlNumber = 1, BaseScore = 1 };
         pot.AddFlavor(FlavorType.Umami, 1);
 
-        Assert(ScoreCalculator.ComputeFinalScore(pot) == 2,
-            "BaseScore=1、味道分=1、第1碗×1 → FinalScore 应为 2");
+        Assert(ScoreCalculator.ComputeFinalScore(pot) == 1,
+            "BaseScore=1、味道分=1、第1碗×1；但仅鲜 1 种 → F4 寡淡 ×0.9 → floor(2×0.9) = 1");
     }
 
     static void Test_PreviewFinalScore_IncludesFlavorScore()
@@ -101,8 +101,8 @@ public static class FlavorScoreTests
         var preview = ctrl.PreviewIngredient(IngredientData.CreateInstance("rice"), es);
 
         Assert(preview.PreviewBaseScore == 1, "米饭预览 BaseScore 应为 1");
-        Assert(preview.PreviewFinalScore == 4,
-            "第6碗（×2）米饭：floor((基础分1 + 味道分1) × 2) = 4");
+        Assert(preview.PreviewFinalScore == 3,
+            "第6碗（×2）米饭：仅鲜 1 种 → F4 寡淡 ×0.9 → floor((基础分1 + 味道分1) × 0.9 × 2) = 3");
     }
 
     static void Test_Reset_ClearsFlavorsAndWeights()
@@ -143,9 +143,9 @@ public static class FlavorScoreTests
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
-        // 咸：2 + 1 = 3，权重 3.0 → 味道分 9；基础分 2 → 合计 11，第1碗 ×1
-        Assert(preview.PreviewFinalScore == 11,
-            "预览应沿用快照中的味道权重（咸3 × 权重3 = 9，加基础分2 → 11）");
+        // 咸：2 + 1 = 3，权重 3.0 → 味道分 9；基础分 2 → 合计 11；仅咸 1 种 → F4 寡淡 ×0.9 → floor(11×0.9)=9
+        Assert(preview.PreviewFinalScore == 9,
+            "预览应沿用快照中的味道权重，并应用 F4 寡淡：咸3 × 权重3 = 9，加基础分2 → 11，×0.9 → 9");
         Assert(state.Pot.FlavorWeights[FlavorType.Salty] == 3.0, "预览不得修改真实权重");
     }
 

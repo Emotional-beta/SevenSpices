@@ -91,8 +91,8 @@ public static class PreviewIngredientTests
         var preview = ctrl.PreviewIngredient(inst, es);
 
         Assert(preview.PreviewBaseScore == 1, "第1碗米饭预测 BaseScore 应为 1");
-        Assert(preview.PreviewFinalScore == 2,
-            "第1碗（×1）PreviewFinalScore 应含味道分：floor((基础分1 + 味道分1) × 1) = 2");
+        Assert(preview.PreviewFinalScore == 1,
+            "第1碗（×1）米饭含味道分，但仅鲜 1 种 → F4 寡淡 ×0.9：floor((1+1)×0.9×1) = 1");
     }
 
     static void Test_Preview_FinalScore_Bowl6_AppliesMultiplier()
@@ -105,8 +105,8 @@ public static class PreviewIngredientTests
         var preview = ctrl.PreviewIngredient(inst, es);
 
         Assert(preview.PreviewBaseScore == 1, "第6碗米饭预测 BaseScore 应为 1");
-        Assert(preview.PreviewFinalScore == 4,
-            "第6碗（×2）PreviewFinalScore 应含味道分：floor((基础分1 + 味道分1) × 2) = 4");
+        Assert(preview.PreviewFinalScore == 3,
+            "第6碗（×2）米饭仅鲜 1 种 → F4 寡淡 ×0.9：floor((1+1)×0.9×2) = 3");
     }
 
     static void Test_Preview_FinalScore_Bowl10_AppliesMultiplier()
@@ -119,8 +119,8 @@ public static class PreviewIngredientTests
         var preview = ctrl.PreviewIngredient(inst, es);
 
         Assert(preview.PreviewBaseScore == 1, "第10碗米饭预测 BaseScore 应为 1");
-        Assert(preview.PreviewFinalScore == 64,
-            "第10碗（×32）PreviewFinalScore 应含味道分：floor((基础分1 + 味道分1) × 32) = 64");
+        Assert(preview.PreviewFinalScore == 57,
+            "第10碗（×32）米饭仅鲜 1 种 → F4 寡淡 ×0.9：floor((1+1)×0.9×32) = 57");
     }
 
     static void Test_Preview_FinalScore_WithIceCube_IncludesEffectMultiplier()

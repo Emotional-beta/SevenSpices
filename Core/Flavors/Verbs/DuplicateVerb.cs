@@ -8,6 +8,9 @@ namespace SevenSpices.Core.Flavors.Verbs;
 /// 并列最高时按 <see cref="FlavorType"/> 声明顺序取最早的一个，保证可复现。
 /// 锅中味道全为 0 时不做任何写入。
 /// </para>
+/// <para>
+/// F4 精·超频：增量再乘以甜的动词档位 PotState.GetVerbPotency（MVP 暂定）。
+/// </para>
 /// </summary>
 public sealed class DuplicateVerb : IFlavorVerb
 {
@@ -34,6 +37,8 @@ public sealed class DuplicateVerb : IFlavorVerb
         if (highestValue <= 0)
             return;
 
-        pot.AddFlavor(highest, context.Config.SweetDuplicateAmount);
+        // F4 精·超频：复制份数随甜的动词档位放大（单次结算内放大数值，而非重复触发，§11.1）。
+        int amount = context.Config.SweetDuplicateAmount * pot.GetVerbPotency(FlavorType.Sweet);
+        pot.AddFlavor(highest, amount);
     }
 }

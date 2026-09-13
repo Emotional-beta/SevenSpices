@@ -47,20 +47,54 @@ public static class ScoreCalculator
     }
 
     /// <summary>
-    /// 根据 pot.BowlNumber、pot.BaseScore、pot.FlavorScore 与 pot.FinalScoreMultiplier 计算最终分数，不修改任何状态。
-    /// 应用公式：Floor((BaseScore + FlavorScore) × 生效碗数倍率 × FinalScoreMultiplier)。
+    /// 根据 pot.BowlNumber、pot.BaseScore、pot.FlavorScore、F4 味道熵（丰盛倍率 / 寡淡惩罚）
+    /// 与 pot.FinalScoreMultiplier 计算最终分数，不修改任何状态。
+    /// 应用公式：<c>Floor((BaseScore + FlavorScore) × 丰盛倍率 × 寡淡系数 × 生效碗数倍率 × FinalScoreMultiplier)</c>。
     /// 供结算与预览共用，避免两处公式漂移。
     /// </summary>
     public static int ComputeFinalScore(PotState pot)
     {
         ArgumentNullException.ThrowIfNull(pot);
 
-        return (int)Math.Floor(pot.BaseScoreWithFlavor * GetEffectiveMultiplier(pot) * pot.FinalScoreMultiplier);
+        return (int)Math.Floor(
+            pot.BaseScoreWithFlavor
+            * GetAbundanceMultiplier(pot)
+            * GetBlandPenalty(pot)
+            * GetEffectiveMultiplier(pot)
+            * pot.FinalScoreMultiplier);
+    }
+
+    /// <summary>
+    /// 杂·丰盛倍率（F4）：按当前激活味道种类数计算全锅分数乘算系数。
+    /// <c>种类数 &gt;= 2 ? min(1 + AbundancePerType × (种类数-1), AbundanceMaxMultiplier) : 1</c>。
+    /// 0 / 1 种味道时均为 1（无加成）。
+    /// </summary>
+    public static double GetAbundanceMultiplier(PotState pot)
+    {
+        ArgumentNullException.ThrowIfNull(pot);
+
+        int typeCount = pot.ActiveFlavorTypeCount;
+        if (typeCount < 2)
+            return 1.0;
+
+        var config = pot.Config;
+        double multiplier = 1.0 + config.AbundancePerType * (typeCount - 1);
+        return Math.Min(multiplier, config.AbundanceMaxMultiplier);
+    }
+
+    /// <summary>
+    /// 寡淡惩罚（F4）：仅 1 种激活味道时返回 FlavorConfig.BlandPenalty（&lt;1 轻量减分），
+    /// 其余情况（0 或 &gt;= 2 种）返回 1.0。惩罚只乘算、不阻断通关（设计文档 §11.4）。
+    /// </summary>
+    public static double GetBlandPenalty(PotState pot)
+    {
+        ArgumentNullException.ThrowIfNull(pot);
+        return pot.ActiveFlavorTypeCount == 1 ? pot.Config.BlandPenalty : 1.0;
     }
 
     /// <summary>
     /// 根据 pot.BowlNumber、pot.BaseScore 与 pot.FlavorScore 计算最终分数，写入 pot.FinalScore，并锁定分数。
-    /// 应用公式：FinalScore = Floor((BaseScore + FlavorScore) × 生效碗数倍率 × FinalScoreMultiplier)。
+    /// 应用公式：FinalScore = Floor((BaseScore + FlavorScore) × 丰盛倍率 × 寡淡系数 × 生效碗数倍率 × FinalScoreMultiplier)。
     /// 如果分数已经锁定，抛出 InvalidOperationException。
     /// </summary>
     public static void CalculateAndLock(PotState pot)

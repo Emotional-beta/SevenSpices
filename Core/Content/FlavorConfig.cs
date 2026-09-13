@@ -42,6 +42,27 @@ public class FlavorConfig
     /// <summary>麻·共振：按最高味道「份数」再触发其动词的最大次数（占位 3）。</summary>
     public int NumbingResonanceCap { get; init; } = 3;
 
+    // ── F4：味道熵（杂·丰盛 / 精·超频 / 寡淡）。所有数值为占位，待调。 ──
+
+    /// <summary>杂·丰盛：激活味道种类数每多 1 种，全锅分数乘算系数的增量（占位 0.1）。</summary>
+    public double AbundancePerType { get; init; } = 0.1;
+
+    /// <summary>杂·丰盛：丰盛倍率的封顶（占位 2.0）。</summary>
+    public double AbundanceMaxMultiplier { get; init; } = 2.0;
+
+    /// <summary>寡淡：仅 1 种激活味道时全锅分数的乘算惩罚系数（占位 0.9，&lt;1 为轻量减分）。</summary>
+    public double BlandPenalty { get; init; } = 0.9;
+
+    /// <summary>
+    /// 精·动词超频：同一味道每多出多少份，其动词效果增强一档（占位 5）。
+    /// 依据 §11.1「每种味道的动词每次加料最多结算一次」，超频<b>不得</b>靠重复触发实现，
+    /// 而是放大动词效果数值（见 PotState.GetVerbPotency）。
+    /// </summary>
+    public int SpecializationStep { get; init; } = 5;
+
+    /// <summary>精·动词超频：动词效果增强的档位封顶（占位 3）。</summary>
+    public int SpecializationMaxPotency { get; init; } = 3;
+
     /// <summary>全局默认配置，供 PotState 取默认权重与互动层取默认数值使用。</summary>
     public static FlavorConfig Default { get; } = new();
 }

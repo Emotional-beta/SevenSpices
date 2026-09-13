@@ -22,7 +22,9 @@ public sealed class AgingVerb : IFlavorVerb
         if (pot.GetFlavor(FlavorType.Bitter) <= 0)
             return;
 
-        double deposit = context.BaseScoreAdded * context.Config.AgingDepositRatio;
+        // F4 精·超频：存入比例随苦的动词档位放大（MVP 暂定，其余动词暂不缩放）。
+        double deposit = context.BaseScoreAdded * context.Config.AgingDepositRatio
+            * pot.GetVerbPotency(FlavorType.Bitter);
         if (deposit > 0)
             pot.AgingPool += deposit;
     }

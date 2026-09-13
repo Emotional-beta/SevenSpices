@@ -109,8 +109,9 @@ public static class FullCoreRunTests
 
         ctrl.AdvanceBowlPhase(); // → ScoreCalculation
         ctrl.CalculateScore();
-        // Bowl1：食材基础分1 + 味道分(鲜1×1) = 2，Multiplier=1, FinalScoreMultiplier=1.0 → FinalScore=2
-        Assert(state.Pot.FinalScore == 2, "第1碗米饭：食材基础分1 + 味道分1 = 2");
+        // Bowl1：食材基础分1 + 味道分(鲜1×1) = 2，Multiplier=1, FinalScoreMultiplier=1.0；
+        // 仅鲜 1 种 → F4 寡淡 ×0.9 → floor(2 × 0.9) = 1
+        Assert(state.Pot.FinalScore == 1, "第1碗米饭：floor((食材基础分1 + 味道分1) × 寡淡0.9) = 1");
         Assert(state.Pot.IsScoreLocked, "分数已锁定");
 
         // 把第一碗走完

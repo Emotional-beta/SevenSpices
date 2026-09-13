@@ -15,6 +15,13 @@ public class PotState
     /// <summary>本锅总碗数上限（普通锅固定10，最终锅为 int.MaxValue）。</summary>
     public int BowlLimit { get; set; } = 10;
 
+    /// <summary>
+    /// 本锅生效的味道系统可调数值配置（开锅时由 PotController / RunController 注入，默认
+    /// <see cref="FlavorConfig.Default"/>）。挂在 PotState 上使结算与预览读取同一份配置，
+    /// 避免公式漂移；已纳入快照（PotStateSnapshot）与 <see cref="Reset"/>。
+    /// </summary>
+    public FlavorConfig Config { get; set; } = FlavorConfig.Default;
+
     /// <summary>锅内已累积的食材实例（食材进锅后持续存在直到本锅结束）。</summary>
     public List<IngredientInstance> Ingredients { get; } = new();
 
@@ -118,6 +125,42 @@ public class PotState
     public double BaseScoreWithFlavor => BaseScore + FlavorScore;
 
     /// <summary>
+    /// 派生只读：当前「激活」的味道种类数（值 &gt; 0 的味道个数）。
+    /// 是 F4 丰盛倍率与寡淡惩罚的唯一判据。
+    /// </summary>
+    public int ActiveFlavorTypeCount
+    {
+        get
+        {
+            int count = 0;
+            foreach (FlavorType flavor in Enum.GetValues<FlavorType>())
+            {
+                if (GetFlavor(flavor) > 0)
+                    count++;
+            }
+            return count;
+        }
+    }
+
+    /// <summary>
+    /// 精·动词超频：同一味道每满 <see cref="FlavorConfig.SpecializationStep"/> 份，其动词效果增强一档。
+    /// 返回 <c>min(1 + (值-1)/步长, SpecializationMaxPotency)</c>（整数除法）；值 ≤ 1 或步长非法时为 1。
+    /// <para>
+    /// MVP 仅甜·复制（增量 ×potency）与苦·陈酿（存入比例 ×potency）两个「有明确数值幅度」的动词生效；
+    /// 酸 / 鲜 / 咸 / 麻 暂不缩放，留待后续。
+    /// </para>
+    /// </summary>
+    public int GetVerbPotency(FlavorType flavor)
+    {
+        int value = GetFlavor(flavor);
+        if (value <= 1 || Config.SpecializationStep <= 0)
+            return 1;
+
+        int potency = 1 + (value - 1) / Config.SpecializationStep;
+        return Math.Min(potency, Config.SpecializationMaxPotency);
+    }
+
+    /// <summary>
     /// 将锅状态重置为"未开始"，用于开始新的一锅。
     /// 清空食材与味道，重置分数、碗数和阶段。
     /// </summary>
@@ -125,6 +168,7 @@ public class PotState
     {
         BowlNumber = 1;
         BowlLimit = bowlLimit;
+        Config = FlavorConfig.Default;
         Ingredients.Clear();
         Flavors.Clear();
         FlavorWeights.Clear();

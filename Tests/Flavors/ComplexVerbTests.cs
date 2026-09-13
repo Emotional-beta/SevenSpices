@@ -126,9 +126,9 @@ public static class ComplexVerbTests
         Assert(state.Pot.AgingPool == 0, "到期兑现后陈酿池应清空");
         Assert(state.Pot.AgingAdds == 0, "到期兑现后计数应复位");
 
-        // 兑现分数参与算分。
-        Assert(ScoreCalculator.ComputeFinalScore(state.Pot) == 17,
-            "BaseScore=16、苦味道分=1、第1碗×1 → 最终分 17");
+        // 兑现分数参与算分。仅苦 1 种味道 → F4 寡淡 ×0.9。
+        Assert(ScoreCalculator.ComputeFinalScore(state.Pot) == 15,
+            "BaseScore=16、苦味道分=1、第1碗×1、仅苦 1 种寡淡×0.9 → floor(17×0.9) = 15");
     }
 
     // ── 2. 最终锅立即兑现 ────────────────────────────────────────────────────

@@ -32,12 +32,7 @@ public sealed class UmamiVerb : IFlavorVerb
             return;
         }
 
-        int typeCount = 0;
-        foreach (FlavorType flavor in Enum.GetValues<FlavorType>())
-        {
-            if (pot.GetFlavor(flavor) > 0)
-                typeCount++;
-        }
+        int typeCount = pot.ActiveFlavorTypeCount;
 
         double multiplier = 1.0 + config.UmamiBonusPerType * (typeCount - 1);
         multiplier = Math.Min(multiplier, config.UmamiMaxMultiplier);

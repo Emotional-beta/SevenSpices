@@ -54,6 +54,9 @@ public class PotController
         if (pot.Phase != PotPhase.NotStarted)
             throw new InvalidOperationException($"Cannot start pot: pot phase is already {pot.Phase}.");
 
+        // F4：把本锅生效的配置注入 PotState，使结算 / 预览 / 动词超频读取同一份配置。
+        pot.Config = _flavorConfig;
+
         if (_gameState.Run.IsFinalPot)
         {
             // 最终锅不逐碗结算：固定 ×32 档位，且不靠碗数上限结束（只能由 RunController.EndCooking 结束）

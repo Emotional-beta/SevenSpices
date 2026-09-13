@@ -281,8 +281,8 @@ public static class FlavorVerbTests
 
         Assert(state.Pot.GetFlavor(FlavorType.Sour) == 1,
             "抛异常的酸动词不改变状态：酸应保持 1");
-        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 7,
-            "坏动词被跳过后甜动词仍执行：甜 6 → 最高甜再复制 +1 = 7");
+        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 8,
+            "坏动词被跳过后甜动词仍执行：甜 6 达到 F4 超频档位（potency 2）→ 最高甜再复制 +2 = 8");
     }
 
     // ── 防重入 ───────────────────────────────────────────────────────────────
