@@ -10,35 +10,65 @@ using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Save;
 using SevenSpices.Core.Scoring;
+using SevenSpices.UI;
+using SevenSpices.UI.Controls;
 
 namespace SevenSpices;
 
 public partial class Main : Node
 {
+    // HUD 七味条宽度受限（32px）且边框为偶数 2px，段数过多会导致每段放不下内填充色，
+    // 故取 5 段：32px 宽下每段约 5~6px，内填充 1~2px 可见，同时保留可区分的 0..5 档。
+    private const int FlavorBarSegments = 5;
+    private const string DetailOpenText = "详情 ▾";
+    private const string DetailClosedText = "详情 ▸";
+
+    private static readonly (string Name, FlavorType Type)[] FlavorRows =
+    [
+        ("酸", FlavorType.Sour),
+        ("甜", FlavorType.Sweet),
+        ("苦", FlavorType.Bitter),
+        ("辣", FlavorType.Spicy),
+        ("鲜", FlavorType.Umami),
+        ("咸", FlavorType.Salty),
+        ("麻", FlavorType.Numbing),
+    ];
+
+    private static readonly Color[] FlavorRowColors =
+    [
+        UiPalette.FlavorSour,
+        UiPalette.FlavorSweet,
+        UiPalette.FlavorBitter,
+        UiPalette.FlavorSpicy,
+        UiPalette.FlavorUmami,
+        UiPalette.FlavorSalty,
+        UiPalette.FlavorNumbing,
+    ];
+
     private GameController _controller = null!;
     private readonly MetaState _metaState = new();
-    private HBoxContainer _candidateRow = null!;
+    private HFlowContainer _candidateRow = null!;
     private Button _skipBowlButton = null!;
     private Label _poolCountLabel = null!;
-    private VBoxContainer _rewardSection = null!;
-    private HBoxContainer _rewardRow = null!;
+    private PanelContainer _rewardSection = null!;
+    private HFlowContainer _rewardRow = null!;
     private Label _itemCountLabel = null!;
-    private HBoxContainer _itemRow = null!;
-    private VBoxContainer _companionSection = null!;
-    private HBoxContainer _companionCandidateRow = null!;
+    private HFlowContainer _itemRow = null!;
+    private PanelContainer _companionSection = null!;
+    private HFlowContainer _companionCandidateRow = null!;
     private Button _skipCompanionButton = null!;
     private VBoxContainer _ownedCompanionList = null!;
-    private VBoxContainer _shopSection = null!;
-    private HBoxContainer _shopRow = null!;
+    private PanelContainer _shopSection = null!;
+    private HFlowContainer _shopRow = null!;
     private Button _skipShopButton = null!;
-    private VBoxContainer _routeSection = null!;
-    private HBoxContainer _routeRow = null!;
+    private PanelContainer _routeSection = null!;
+    private HFlowContainer _routeRow = null!;
     private Button _skipRouteButton = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
     private Label _professionLabel = null!;
-    private HBoxContainer _professionRow = null!;
+    private HFlowContainer _professionRow = null!;
     private Label _phaseLabel = null!;
     private Label _bowlLabel = null!;
     private Label _scoreLabel = null!;
@@ -51,10 +81,17 @@ public partial class Main : Node
     private Label _bossLineLabel = null!;
     private Label _bossVerdictLabel = null!;
     private Label _goldLabel = null!;
-    private Label _flavorLabel = null!;
+    private PixelBar[] _flavorBars = [];
+    private Label[] _flavorValueLabels = [];
     private Label _flavorEntropyLabel = null!;
     private Label _flavorStatusLabel = null!;
     private Label _bottomLabel = null!;
+
+    // 常驻 HUD（固定不滚动）与按需详情抽屉
+    private Label _hudScoreLabel = null!;
+    private Button _detailToggleButton = null!;
+    private PanelContainer _detailDrawer = null!;
+    private bool _detailOpen;
     private Label _runEndLabel = null!;
     private Button _restartButton = null!;
     private Button _nextPotButton = null!;
@@ -74,6 +111,9 @@ public partial class Main : Node
 
     public override void _Ready()
     {
+        GetTree().Root.Theme = PixelTheme.Build();
+        GetWindow().MinSize = new Vector2I(UiMetrics.BaseWidth, UiMetrics.BaseHeight);
+
         _controller = new GameController(metaState: _metaState);
         _controller.StartNewGame();
 
@@ -102,287 +142,315 @@ public partial class Main : Node
         uiRoot.AnchorBottom = 1.0f;
         uiRoot.GrowHorizontal = Control.GrowDirection.Both;
         uiRoot.GrowVertical = Control.GrowDirection.Both;
+        // Main 的场景根是 Node，主题挂在 Root Window 上不会传播到运行期创建的 Control；
+        // 因此所有覆盖层（含 tooltip）都必须挂在 uiRoot 之下，才能一并继承像素皮肤。
+        uiRoot.Theme = GetTree().Root.Theme;
         AddChild(uiRoot);
+
+        var background = new ColorRect { Color = UiPalette.Bg };
+        background.AnchorRight = 1.0f;
+        background.AnchorBottom = 1.0f;
+        background.GrowHorizontal = Control.GrowDirection.Both;
+        background.GrowVertical = Control.GrowDirection.Both;
+        background.MouseFilter = Control.MouseFilterEnum.Ignore;
+        uiRoot.AddChild(background);
 
         var margin = new MarginContainer();
         margin.AnchorRight = 1.0f;
         margin.AnchorBottom = 1.0f;
         margin.GrowHorizontal = Control.GrowDirection.Both;
         margin.GrowVertical = Control.GrowDirection.Both;
-        margin.AddThemeConstantOverride("margin_left", 20);
-        margin.AddThemeConstantOverride("margin_top", 20);
-        margin.AddThemeConstantOverride("margin_right", 20);
-        margin.AddThemeConstantOverride("margin_bottom", 20);
+        margin.AddThemeConstantOverride("margin_left", UiMetrics.Pad);
+        margin.AddThemeConstantOverride("margin_top", UiMetrics.Pad);
+        margin.AddThemeConstantOverride("margin_right", UiMetrics.Pad);
+        margin.AddThemeConstantOverride("margin_bottom", UiMetrics.Pad);
         uiRoot.AddChild(margin);
 
-        // 内容区放入纵向滚动容器，避免区块超出窗口高度后底部按钮被裁剪到屏幕外。
+        // 三层结构：常驻 HUD（固定不滚动）／按需详情抽屉（HUD 下方展开）／可滚动主体。
+        // 见《界面风格规范》§六：常驻 = 分数、倍率、七味条；细节按需展开。
+        var rootCol = new VBoxContainer();
+        rootCol.AddThemeConstantOverride("separation", UiMetrics.Gap);
+        margin.AddChild(rootCol);
+
+        BuildHud(rootCol);
+
+        // 详情抽屉（默认收起）：承载「味道种类数 / 熵倍率」「陈酿 / 固化 / 臭」「锅底」等按需信息。
+        // 放在 HUD 与滚动主体之间，展开时压缩滚动区高度而不把主体挤出屏幕。
+        _detailDrawer = MakePanel("PanelCard");
+        _detailDrawer.Visible = false;
+        rootCol.AddChild(_detailDrawer);
+
+        var drawerCol = MakeColumn(UiMetrics.Gap);
+        _detailDrawer.AddChild(drawerCol);
+        drawerCol.AddChild(MakeLabel("按需详情（味道种类 / 状态 / 锅底）", center: true, minHeight: 24, variation: "LabelDim"));
+
+        _flavorEntropyLabel = MakeLabel("味道种类：0", center: true, minHeight: 24, variation: "LabelDim");
+        drawerCol.AddChild(_flavorEntropyLabel);
+
+        _flavorStatusLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
+        drawerCol.AddChild(_flavorStatusLabel);
+
+        _bottomLabel = MakeLabel("锅底：--", center: true, minHeight: 24, variation: "LabelDim");
+        drawerCol.AddChild(_bottomLabel);
+
+        // 操作区放入纵向滚动容器，避免区块超出窗口高度后底部按钮被裁剪到屏幕外。
+        // 各行动态按钮改用 HFlowContainer 自动换行，故横向滚动保持 Disabled 即可。
         var scroll = new ScrollContainer();
         scroll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
-        margin.AddChild(scroll);
+        rootCol.AddChild(scroll);
 
         var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 20);
+        vbox.AddThemeConstantOverride("separation", UiMetrics.Gap);
         vbox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         scroll.AddChild(vbox);
 
-        vbox.AddChild(MakeLabel("七荤八素", center: true, minHeight: 40));
+        vbox.AddChild(MakeLabel("七荤八素", center: true, minHeight: 32, variation: "LabelTitle"));
 
-        // 存档 / 读档入口：随时可用（读档会从当前锅开头重新开始）。
+        // ── 存档 / 读档（随时可用，读档会从当前锅开头重新开始）─────────────────
+        var savePanel = MakePanel("PanelCard");
+        vbox.AddChild(savePanel);
+        var saveCol = MakeColumn(UiMetrics.Gap);
+        savePanel.AddChild(saveCol);
+
         var saveRow = new HBoxContainer();
         saveRow.Alignment = BoxContainer.AlignmentMode.Center;
-        saveRow.AddThemeConstantOverride("separation", 20);
-        vbox.AddChild(saveRow);
+        saveRow.AddThemeConstantOverride("separation", UiMetrics.Gap);
+        saveCol.AddChild(saveRow);
 
         _saveButton = new Button();
         _saveButton.Text = "存档";
-        _saveButton.CustomMinimumSize = new Vector2(120, 36);
+        _saveButton.CustomMinimumSize = new Vector2(112, 32);
         _saveButton.Pressed += OnSavePressed;
         saveRow.AddChild(_saveButton);
 
         _loadButton = new Button();
         _loadButton.Text = "读档";
-        _loadButton.CustomMinimumSize = new Vector2(120, 36);
+        _loadButton.CustomMinimumSize = new Vector2(112, 32);
         _loadButton.Pressed += OnLoadPressed;
         saveRow.AddChild(_loadButton);
 
-        _saveFeedbackLabel = MakeLabel(string.Empty, center: true, minHeight: 24);
-        vbox.AddChild(_saveFeedbackLabel);
+        _saveFeedbackLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
+        _saveFeedbackLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        saveCol.AddChild(_saveFeedbackLabel);
 
-        // 职业选择面板：显示当前职业 + 7 个职业按钮（点按即用该职业开新局）。
-        _professionLabel = MakeLabel("职业：--", center: true, minHeight: 28);
-        vbox.AddChild(_professionLabel);
+        // ── 职业选择（7 个职业按钮在窄屏下自动换行）───────────────────────────
+        var professionPanel = MakePanel("PanelPlate");
+        vbox.AddChild(professionPanel);
+        var professionCol = MakeColumn(UiMetrics.Gap);
+        professionPanel.AddChild(professionCol);
 
-        _professionRow = new HBoxContainer();
-        _professionRow.Alignment = BoxContainer.AlignmentMode.Center;
-        _professionRow.AddThemeConstantOverride("separation", 10);
-        vbox.AddChild(_professionRow);
+        _professionLabel = MakeLabel("职业：--", center: true, minHeight: 24, variation: "LabelDim");
+        professionCol.AddChild(_professionLabel);
+
+        _professionRow = MakeFlowRow();
+        professionCol.AddChild(_professionRow);
 
         foreach (var profession in ProfessionConfig.All)
         {
             var captured = profession;
             var professionButton = new Button();
             professionButton.Text = captured.Name;
-            professionButton.CustomMinimumSize = new Vector2(110, 36);
+            professionButton.CustomMinimumSize = new Vector2(112, 32);
             professionButton.TooltipText = captured.Description;
             professionButton.Pressed += () => OnProfessionPressed(captured.Id);
             _professionRow.AddChild(professionButton);
         }
 
-        var runRow = new HBoxContainer();
-        runRow.Alignment = BoxContainer.AlignmentMode.Center;
-        runRow.AddThemeConstantOverride("separation", 40);
-        vbox.AddChild(runRow);
-        _chapterLabel = MakeLabel("第 1 章");
-        runRow.AddChild(_chapterLabel);
-        _potLabel = MakeLabel("第 1 锅");
-        runRow.AddChild(_potLabel);
+        // ── 局面信息 ──────────────────────────────────────────────────────────
+        var infoPanel = MakePanel("PanelPlate");
+        vbox.AddChild(infoPanel);
+        var infoCol = MakeColumn(UiMetrics.Gap);
+        infoPanel.AddChild(infoCol);
 
-        _phaseLabel = MakeLabel("阶段：--", center: true, minHeight: 28);
-        vbox.AddChild(_phaseLabel);
-        _bowlLabel = MakeLabel("碗数：-- / --", center: true, minHeight: 28);
-        vbox.AddChild(_bowlLabel);
-        _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 28);
-        vbox.AddChild(_scoreLabel);
-        _flavorScoreLabel = MakeLabel("味道分：0", center: true, minHeight: 28);
-        vbox.AddChild(_flavorScoreLabel);
-        _multiplierLabel = MakeLabel("倍率：×1", center: true, minHeight: 28);
-        vbox.AddChild(_multiplierLabel);
-        _finalScoreLabel = MakeLabel("最终分数：0", center: true, minHeight: 28);
-        vbox.AddChild(_finalScoreLabel);
-        _totalScoreLabel = MakeLabel("本锅累计基础分：0", center: true, minHeight: 28);
-        vbox.AddChild(_totalScoreLabel);
-        _customerLabel = MakeLabel("当前食客：--", center: true, minHeight: 28);
-        vbox.AddChild(_customerLabel);
+        // 章 / 锅 / 碗数 / 阶段与「分数 + 倍率」已上移到常驻 HUD（见 BuildHud），此处只留分数明细。
+        _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 24);
+        infoCol.AddChild(_scoreLabel);
+        _flavorScoreLabel = MakeLabel("味道分：0", center: true, minHeight: 24);
+        infoCol.AddChild(_flavorScoreLabel);
+        _finalScoreLabel = MakeLabel("最终分数：0", center: true, minHeight: 24);
+        infoCol.AddChild(_finalScoreLabel);
+        _totalScoreLabel = MakeLabel("本锅累计基础分：0", center: true, minHeight: 24);
+        infoCol.AddChild(_totalScoreLabel);
+        _customerLabel = MakeLabel("当前食客：--", center: true, minHeight: 24, variation: "LabelDim");
+        infoCol.AddChild(_customerLabel);
 
         // 饕餮试吃区：仅当前食客是饕餮时显示，文案/台词全部取自 BossConfig。
-        _bossLabel = MakeLabel("饕餮：--", center: true, minHeight: 28);
+        _bossLabel = MakeLabel("饕餮：--", center: true, minHeight: 24);
         _bossLabel.Visible = false;
-        vbox.AddChild(_bossLabel);
+        infoCol.AddChild(_bossLabel);
 
-        _bossLineLabel = MakeLabel(string.Empty, center: true, minHeight: 28);
+        _bossLineLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
         _bossLineLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _bossLineLabel.Visible = false;
-        vbox.AddChild(_bossLineLabel);
+        infoCol.AddChild(_bossLineLabel);
 
         // 最近一次试吃判定（章末 Boss / 最终锅真身共用），无记录时隐藏。
-        _bossVerdictLabel = MakeLabel(string.Empty, center: true, minHeight: 28);
+        _bossVerdictLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
+        _bossVerdictLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _bossVerdictLabel.Visible = false;
-        vbox.AddChild(_bossVerdictLabel);
+        infoCol.AddChild(_bossVerdictLabel);
 
         // 本局终止 / 终局文案：放在信息区靠上位置，避免被长滚动区裁到视口外。
-        _runEndLabel = MakeLabel(string.Empty, center: true, minHeight: 60);
+        _runEndLabel = MakeLabel(string.Empty, center: true, minHeight: 56);
         _runEndLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _runEndLabel.Visible = false;
-        vbox.AddChild(_runEndLabel);
+        infoCol.AddChild(_runEndLabel);
 
         // 本局结束后的重开入口：仅在 IsRunComplete 时可见 / 可点。
         _restartButton = new Button();
         _restartButton.Text = "重新开始（投胎重来）";
-        _restartButton.CustomMinimumSize = new Vector2(220, 40);
+        _restartButton.CustomMinimumSize = new Vector2(224, 32);
         _restartButton.Visible = false;
         _restartButton.Pressed += OnRestartPressed;
-        vbox.AddChild(_restartButton);
+        infoCol.AddChild(_restartButton);
 
-        _goldLabel = MakeLabel("金币：0", center: true, minHeight: 28);
-        vbox.AddChild(_goldLabel);
+        _goldLabel = MakeLabel("金币：0", center: true, minHeight: 24);
+        infoCol.AddChild(_goldLabel);
 
-        var sep1 = new HSeparator();
-        sep1.CustomMinimumSize = new Vector2(0, 10);
-        vbox.AddChild(sep1);
+        // 七味条已上移常驻 HUD；味道种类 / 陈酿 / 固化 / 臭 / 锅底已移入详情抽屉（见 BuildUI 顶部）。
 
-        vbox.AddChild(MakeLabel("味道", center: true, minHeight: 28));
-        _flavorLabel = MakeLabel("--", center: true, minHeight: 28);
-        vbox.AddChild(_flavorLabel);
+        // ── 道具 ──────────────────────────────────────────────────────────────
+        var itemPanel = MakePanel("PanelCard");
+        vbox.AddChild(itemPanel);
+        var itemCol = MakeColumn(UiMetrics.Gap);
+        itemPanel.AddChild(itemCol);
 
-        _flavorEntropyLabel = MakeLabel("味道种类：0", center: true, minHeight: 28);
-        vbox.AddChild(_flavorEntropyLabel);
+        itemCol.AddChild(MakeLabel("道具（加入食材前使用）", center: true, minHeight: 24, variation: "LabelDim"));
 
-        _flavorStatusLabel = MakeLabel("", center: true, minHeight: 28);
-        vbox.AddChild(_flavorStatusLabel);
+        _itemCountLabel = MakeLabel("持有道具：0", center: true, minHeight: 24);
+        itemCol.AddChild(_itemCountLabel);
 
-        _bottomLabel = MakeLabel("锅底：--", center: true, minHeight: 28);
-        vbox.AddChild(_bottomLabel);
+        _itemRow = MakeFlowRow();
+        itemCol.AddChild(_itemRow);
 
-        var sep2 = new HSeparator();
-        sep2.CustomMinimumSize = new Vector2(0, 10);
-        vbox.AddChild(sep2);
+        // ── 食材候选 ──────────────────────────────────────────────────────────
+        var candidatePanel = MakePanel("PanelPlate");
+        vbox.AddChild(candidatePanel);
+        var candidateCol = MakeColumn(UiMetrics.Gap);
+        candidatePanel.AddChild(candidateCol);
 
-        vbox.AddChild(MakeLabel("道具（加入食材前使用）", center: true, minHeight: 28));
+        candidateCol.AddChild(MakeLabel("抽取食材（选择其一加入锅中）", center: true, minHeight: 24, variation: "LabelDim"));
 
-        _itemCountLabel = MakeLabel("持有道具：0", center: true, minHeight: 28);
-        vbox.AddChild(_itemCountLabel);
+        _candidateRow = MakeFlowRow();
+        candidateCol.AddChild(_candidateRow);
 
-        _itemRow = new HBoxContainer();
-        _itemRow.Alignment = BoxContainer.AlignmentMode.Center;
-        _itemRow.AddThemeConstantOverride("separation", 15);
-        _itemRow.CustomMinimumSize = new Vector2(0, 40);
-        vbox.AddChild(_itemRow);
-
-        vbox.AddChild(MakeLabel("抽取食材（选择其一加入锅中）", center: true, minHeight: 28));
-
-        _candidateRow = new HBoxContainer();
-        _candidateRow.Alignment = BoxContainer.AlignmentMode.Center;
-        _candidateRow.AddThemeConstantOverride("separation", 15);
-        _candidateRow.CustomMinimumSize = new Vector2(0, 40);
-        vbox.AddChild(_candidateRow);
-
-        _poolCountLabel = MakeLabel("剩余食材池：0", center: true, minHeight: 28);
-        vbox.AddChild(_poolCountLabel);
+        _poolCountLabel = MakeLabel("剩余食材池：0", center: true, minHeight: 24);
+        candidateCol.AddChild(_poolCountLabel);
 
         _skipBowlButton = new Button();
         _skipBowlButton.Text = "倒水（本碗不加入食材，直接结算）";
-        _skipBowlButton.CustomMinimumSize = new Vector2(280, 36);
+        _skipBowlButton.CustomMinimumSize = new Vector2(280, 32);
         _skipBowlButton.Pressed += OnSkipBowlPressed;
-        vbox.AddChild(_skipBowlButton);
+        candidateCol.AddChild(_skipBowlButton);
 
         // 普通锅结束后的 X 选 1 食材奖励区域（仅奖励态显示）
-        _rewardSection = new VBoxContainer();
-        _rewardSection.AddThemeConstantOverride("separation", 8);
+        _rewardSection = MakePanel("PanelCard");
         _rewardSection.Visible = false;
         vbox.AddChild(_rewardSection);
 
-        var rewardTitle = MakeLabel("锅结束奖励：选择 1 个食材", center: true, minHeight: 28);
-        _rewardSection.AddChild(rewardTitle);
+        var rewardCol = MakeColumn(UiMetrics.Gap);
+        _rewardSection.AddChild(rewardCol);
+        rewardCol.AddChild(MakeLabel("锅结束奖励：选择 1 个食材", center: true, minHeight: 24, variation: "LabelDim"));
 
-        _rewardRow = new HBoxContainer();
-        _rewardRow.Alignment = BoxContainer.AlignmentMode.Center;
-        _rewardRow.AddThemeConstantOverride("separation", 15);
-        _rewardRow.CustomMinimumSize = new Vector2(0, 40);
-        _rewardSection.AddChild(_rewardRow);
+        _rewardRow = MakeFlowRow();
+        rewardCol.AddChild(_rewardRow);
 
         // 普通锅结束后的伙伴候选区域（仅等待选择时显示）
-        _companionSection = new VBoxContainer();
-        _companionSection.AddThemeConstantOverride("separation", 8);
+        _companionSection = MakePanel("PanelCard");
         _companionSection.Visible = false;
         vbox.AddChild(_companionSection);
 
-        _companionSection.AddChild(MakeLabel("伙伴候选：选择 1 位伙伴", center: true, minHeight: 28));
+        var companionCol = MakeColumn(UiMetrics.Gap);
+        _companionSection.AddChild(companionCol);
 
-        _companionCandidateRow = new HBoxContainer();
-        _companionCandidateRow.Alignment = BoxContainer.AlignmentMode.Center;
-        _companionCandidateRow.AddThemeConstantOverride("separation", 15);
-        _companionSection.AddChild(_companionCandidateRow);
+        companionCol.AddChild(MakeLabel("伙伴候选：选择 1 位伙伴", center: true, minHeight: 24, variation: "LabelDim"));
+
+        _companionCandidateRow = MakeFlowRow();
+        companionCol.AddChild(_companionCandidateRow);
 
         _skipCompanionButton = new Button();
         _skipCompanionButton.Text = "跳过伙伴选择";
-        _skipCompanionButton.CustomMinimumSize = new Vector2(180, 36);
+        _skipCompanionButton.CustomMinimumSize = new Vector2(176, 32);
         _skipCompanionButton.Pressed += OnSkipCompanionPressed;
-        _companionSection.AddChild(_skipCompanionButton);
+        companionCol.AddChild(_skipCompanionButton);
 
         // 已有伙伴（长期资源，只读展示）
-        vbox.AddChild(MakeLabel("已有伙伴", center: true, minHeight: 28));
+        var ownedPanel = MakePanel("PanelCard");
+        vbox.AddChild(ownedPanel);
+        var ownedCol = MakeColumn(UiMetrics.Gap);
+        ownedPanel.AddChild(ownedCol);
+        ownedCol.AddChild(MakeLabel("已有伙伴", center: true, minHeight: 24, variation: "LabelDim"));
+
         _ownedCompanionList = new VBoxContainer();
-        _ownedCompanionList.AddThemeConstantOverride("separation", 4);
-        vbox.AddChild(_ownedCompanionList);
+        _ownedCompanionList.AddThemeConstantOverride("separation", UiMetrics.Gap);
+        ownedCol.AddChild(_ownedCompanionList);
 
         // 普通锅结束后的商店区域（仅营业时显示）
-        _shopSection = new VBoxContainer();
-        _shopSection.AddThemeConstantOverride("separation", 8);
+        _shopSection = MakePanel("PanelCard");
         _shopSection.Visible = false;
         vbox.AddChild(_shopSection);
 
-        _shopSection.AddChild(MakeLabel("商店：购买食材 / 道具", center: true, minHeight: 28));
+        var shopCol = MakeColumn(UiMetrics.Gap);
+        _shopSection.AddChild(shopCol);
 
-        _shopRow = new HBoxContainer();
-        _shopRow.Alignment = BoxContainer.AlignmentMode.Center;
-        _shopRow.AddThemeConstantOverride("separation", 15);
-        _shopRow.CustomMinimumSize = new Vector2(0, 40);
-        _shopSection.AddChild(_shopRow);
+        shopCol.AddChild(MakeLabel("商店：购买食材 / 道具", center: true, minHeight: 24, variation: "LabelDim"));
+
+        _shopRow = MakeFlowRow();
+        shopCol.AddChild(_shopRow);
 
         _skipShopButton = new Button();
         _skipShopButton.Text = "跳过商店";
-        _skipShopButton.CustomMinimumSize = new Vector2(180, 36);
+        _skipShopButton.CustomMinimumSize = new Vector2(176, 32);
         _skipShopButton.Pressed += OnSkipShopPressed;
-        _shopSection.AddChild(_skipShopButton);
+        shopCol.AddChild(_skipShopButton);
 
         // 每章第 3 锅商店结算后的路线（餐饮风潮）区域（仅等待选择时显示）
-        _routeSection = new VBoxContainer();
-        _routeSection.AddThemeConstantOverride("separation", 8);
+        _routeSection = MakePanel("PanelCard");
         _routeSection.Visible = false;
         vbox.AddChild(_routeSection);
 
-        _routeSection.AddChild(MakeLabel(
-            "监味星君指点：挑一条道（1 保底 + 2 风潮）", center: true, minHeight: 28));
+        var routeCol = MakeColumn(UiMetrics.Gap);
+        _routeSection.AddChild(routeCol);
 
-        _routeRow = new HBoxContainer();
-        _routeRow.Alignment = BoxContainer.AlignmentMode.Center;
-        _routeRow.AddThemeConstantOverride("separation", 15);
-        _routeRow.CustomMinimumSize = new Vector2(0, 40);
-        _routeSection.AddChild(_routeRow);
+        routeCol.AddChild(MakeLabel(
+            "监味星君指点：挑一条道（1 保底 + 2 风潮）", center: true, minHeight: 24, variation: "LabelDim"));
+
+        _routeRow = MakeFlowRow();
+        routeCol.AddChild(_routeRow);
 
         _skipRouteButton = new Button();
         _skipRouteButton.Text = "跳过（领保底）";
-        _skipRouteButton.CustomMinimumSize = new Vector2(180, 36);
+        _skipRouteButton.CustomMinimumSize = new Vector2(176, 32);
         _skipRouteButton.Pressed += OnSkipRoutePressed;
-        _routeSection.AddChild(_skipRouteButton);
+        routeCol.AddChild(_skipRouteButton);
 
         // 普通锅结束后的跨锅推进入口
         _nextPotButton = new Button();
         _nextPotButton.Text = "进入下一锅";
-        _nextPotButton.CustomMinimumSize = new Vector2(180, 40);
+        _nextPotButton.CustomMinimumSize = new Vector2(176, 32);
         _nextPotButton.Pressed += OnNextPotPressed;
         vbox.AddChild(_nextPotButton);
 
         // 最终锅专用入口：玩家决定「放好」后，整口最终锅一次性结算
         _endCookingButton = new Button();
         _endCookingButton.Text = "结束煮粥（结算最终锅）";
-        _endCookingButton.CustomMinimumSize = new Vector2(220, 40);
+        _endCookingButton.CustomMinimumSize = new Vector2(224, 32);
         _endCookingButton.Pressed += OnEndCookingPressed;
         vbox.AddChild(_endCookingButton);
 
-        // tooltip 面板挂到顶层覆盖 Control，脱离 vbox 布局流，
-        // 设置 MouseFilter.Ignore 彻底不参与鼠标事件，防止闪烁。
+        // tooltip 挂到 uiRoot 的顶层覆盖 Control，脱离 vbox 布局流并继承 uiRoot 主题（像素皮肤）；
+        // MouseFilter.Ignore 让它彻底不参与鼠标事件，防止闪烁。
         var tooltipOverlay = new Control();
         tooltipOverlay.AnchorRight = 1.0f;
         tooltipOverlay.AnchorBottom = 1.0f;
         tooltipOverlay.GrowHorizontal = Control.GrowDirection.Both;
         tooltipOverlay.GrowVertical = Control.GrowDirection.Both;
         tooltipOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
-        AddChild(tooltipOverlay);
+        uiRoot.AddChild(tooltipOverlay);
 
-        _tooltipPanel = new PanelContainer();
+        _tooltipPanel = new PanelContainer { ThemeTypeVariation = "PanelTooltip" };
         _tooltipPanel.Visible = false;
         _tooltipPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
         tooltipOverlay.AddChild(_tooltipPanel);
@@ -393,7 +461,100 @@ public partial class Main : Node
         _tooltipPanel.AddChild(_tooltipLabel);
     }
 
-    private static Label MakeLabel(string text, bool center = false, int minHeight = 0)
+    /// <summary>
+    /// 常驻 HUD（固定不滚动）：分数 + 倍率、章 / 锅 / 碗数 / 阶段、七味短条、详情开合按钮。
+    /// 依据《界面风格规范》§六「常驻精简」；纵向刻意收紧（≈104px），给下方滚动主体留空间。
+    /// </summary>
+    private void BuildHud(Container parent)
+    {
+        var hud = MakePanel("PanelPlate");
+        parent.AddChild(hud);
+
+        var hudCol = MakeColumn(UiMetrics.Gap);
+        hud.AddChild(hudCol);
+
+        // 第一行：分数（标题字号，醒目）+ 倍率
+        var scoreRow = new HBoxContainer();
+        scoreRow.Alignment = BoxContainer.AlignmentMode.Center;
+        scoreRow.AddThemeConstantOverride("separation", UiMetrics.Pad);
+        hudCol.AddChild(scoreRow);
+
+        _hudScoreLabel = MakeLabel("分数 0", center: true, variation: "LabelTitle");
+        scoreRow.AddChild(_hudScoreLabel);
+
+        _multiplierLabel = MakeLabel("倍率：×1", center: true, minHeight: 24);
+        scoreRow.AddChild(_multiplierLabel);
+
+        // 第二行：章 / 锅 / 碗数 / 阶段（核心进度，紧凑一行）+ 右侧详情开关
+        var progressRow = new HBoxContainer();
+        progressRow.AddThemeConstantOverride("separation", UiMetrics.Pad);
+        hudCol.AddChild(progressRow);
+
+        _chapterLabel = MakeLabel("第 1 章", center: true, minHeight: 24);
+        progressRow.AddChild(_chapterLabel);
+        _potLabel = MakeLabel("第 1 锅", center: true, minHeight: 24);
+        progressRow.AddChild(_potLabel);
+        _bowlLabel = MakeLabel("碗数：-- / --", center: true, minHeight: 24);
+        progressRow.AddChild(_bowlLabel);
+        _phaseLabel = MakeLabel("阶段：--", center: true, minHeight: 24);
+        progressRow.AddChild(_phaseLabel);
+
+        var spacer = new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        progressRow.AddChild(spacer);
+
+        _detailToggleButton = new Button { Text = DetailClosedText };
+        _detailToggleButton.CustomMinimumSize = new Vector2(88, 32);
+        _detailToggleButton.Pressed += OnDetailTogglePressed;
+        progressRow.AddChild(_detailToggleButton);
+
+        // 第三行：七味短条（单字味道名 + 短条 + 数值），HFlowContainer 自动换行防溢出
+        var flavorFlow = MakeFlowRow();
+        flavorFlow.AddThemeConstantOverride("h_separation", UiMetrics.Unit / 2);
+        flavorFlow.AddThemeConstantOverride("v_separation", UiMetrics.Unit / 2);
+        hudCol.AddChild(flavorFlow);
+
+        _flavorBars = new PixelBar[FlavorRows.Length];
+        _flavorValueLabels = new Label[FlavorRows.Length];
+        for (int i = 0; i < FlavorRows.Length; i++)
+        {
+            var chip = new HBoxContainer();
+            chip.AddThemeConstantOverride("separation", UiMetrics.Unit / 2);
+
+            var flavorName = MakeLabel(FlavorRows[i].Name, center: true);
+            flavorName.CustomMinimumSize = new Vector2(16, 0);
+            chip.AddChild(flavorName);
+
+            var bar = new PixelBar
+            {
+                SegmentCount = FlavorBarSegments,
+                SegmentGap = 1,
+                Filled = 0,
+                FillColor = FlavorRowColors[i],
+            };
+            bar.CustomMinimumSize = new Vector2(32, UiMetrics.Unit);
+            chip.AddChild(bar);
+            _flavorBars[i] = bar;
+
+            var flavorValue = MakeLabel("0");
+            flavorValue.CustomMinimumSize = new Vector2(24, 0);
+            flavorValue.HorizontalAlignment = HorizontalAlignment.Right;
+            flavorValue.VerticalAlignment = VerticalAlignment.Center;
+            chip.AddChild(flavorValue);
+            _flavorValueLabels[i] = flavorValue;
+
+            flavorFlow.AddChild(chip);
+        }
+    }
+
+    /// <summary>详情抽屉开合：只切 Visible 与按钮文案，不影响游戏状态，也无需置脏刷新。</summary>
+    private void OnDetailTogglePressed()
+    {
+        _detailOpen = !_detailOpen;
+        _detailDrawer.Visible = _detailOpen;
+        _detailToggleButton.Text = _detailOpen ? DetailOpenText : DetailClosedText;
+    }
+
+    private static Label MakeLabel(string text, bool center = false, int minHeight = 0, string? variation = null)
     {
         var lbl = new Label();
         lbl.Text = text;
@@ -404,7 +565,30 @@ public partial class Main : Node
         }
         if (minHeight > 0)
             lbl.CustomMinimumSize = new Vector2(0, minHeight);
+        if (variation != null)
+            lbl.ThemeTypeVariation = variation;
         return lbl;
+    }
+
+    private static PanelContainer MakePanel(string variation) =>
+        new() { ThemeTypeVariation = variation };
+
+    private static VBoxContainer MakeColumn(int separation)
+    {
+        var col = new VBoxContainer();
+        col.AddThemeConstantOverride("separation", separation);
+        return col;
+    }
+
+    /// <summary>会换行的横向按钮行：窄屏（640×360）下自动折行，避免按钮被裁到屏幕外。</summary>
+    private static HFlowContainer MakeFlowRow()
+    {
+        var row = new HFlowContainer();
+        row.Alignment = FlowContainer.AlignmentMode.Center;
+        row.AddThemeConstantOverride("h_separation", UiMetrics.Gap);
+        row.AddThemeConstantOverride("v_separation", UiMetrics.Gap);
+        row.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        return row;
     }
 
     private void OnCandidateHover(IngredientInstance candidate)
@@ -688,6 +872,7 @@ public partial class Main : Node
             ? "最终锅：可无限添加食材"
             : $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
         _scoreLabel.Text = $"基础分：{(int)Math.Floor(pot.BaseScoreWithFlavor)}（食材/效果分：{pot.BaseScore}）";
+        _hudScoreLabel.Text = $"分数 {(int)Math.Floor(pot.BaseScoreWithFlavor)}";
         _flavorScoreLabel.Text = $"味道分：{(int)Math.Floor(pot.FlavorScore)}";
         int multiplier = ScoreCalculator.GetEffectiveMultiplier(pot);
         _multiplierLabel.Text = pot.HeatBowlsRemaining > 0 && pot.HeatBonusTiers > 0
@@ -745,7 +930,7 @@ public partial class Main : Node
         RefreshBossVerdict(run);
         _goldLabel.Text = $"金币：{_controller.Player.Gold}";
 
-        _flavorLabel.Text = ToFlavorText(pot);
+        RefreshFlavorBars(pot);
         _flavorEntropyLabel.Text = BuildFlavorEntropyText(pot);
         string flavorStatus = BuildFlavorStatusText(pot);
         _flavorStatusLabel.Text = flavorStatus;
@@ -851,7 +1036,7 @@ public partial class Main : Node
             var captured = candidate;
             var btn = new Button();
             btn.Text = captured.Definition.Name;
-            btn.CustomMinimumSize = new Vector2(80, 36);
+            btn.CustomMinimumSize = new Vector2(80, 32);
             btn.Disabled = !canSelect;
             btn.Pressed += () => OnCandidatePressed(captured);
             btn.MouseEntered += () => OnCandidateHover(captured);
@@ -882,7 +1067,7 @@ public partial class Main : Node
             var captured = candidate;
             var btn = new Button();
             btn.Text = captured.Definition.Name;
-            btn.CustomMinimumSize = new Vector2(80, 36);
+            btn.CustomMinimumSize = new Vector2(80, 32);
             btn.Pressed += () => OnRewardPressed(captured);
             btn.MouseEntered += () => OnRewardHover(captured);
             btn.MouseExited += HideTooltip;
@@ -912,9 +1097,10 @@ public partial class Main : Node
                 var captured = candidate;
 
                 var column = new VBoxContainer();
-                column.AddThemeConstantOverride("separation", 4);
+                column.AddThemeConstantOverride("separation", UiMetrics.Gap);
 
                 var info = MakeLabel($"{captured.Name}：{captured.Description}", center: true);
+                info.AutowrapMode = TextServer.AutowrapMode.WordSmart;
                 info.CustomMinimumSize = new Vector2(240, 0);
                 column.AddChild(info);
 
@@ -944,9 +1130,11 @@ public partial class Main : Node
         {
             foreach (var companion in _controller.Player.Companions)
             {
-                _ownedCompanionList.AddChild(MakeLabel(
+                var owned = MakeLabel(
                     $"{companion.Definition.Name}：{companion.Definition.Description}",
-                    center: true, minHeight: 24));
+                    center: true, minHeight: 24);
+                owned.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+                _ownedCompanionList.AddChild(owned);
             }
         }
     }
@@ -977,7 +1165,7 @@ public partial class Main : Node
             var offer = offers[i];
 
             var column = new VBoxContainer();
-            column.AddThemeConstantOverride("separation", 4);
+            column.AddThemeConstantOverride("separation", UiMetrics.Gap);
 
             column.AddChild(MakeLabel(
                 $"{offer.DisplayName}（{offer.Price} 金币）", center: true, minHeight: 24));
@@ -994,7 +1182,7 @@ public partial class Main : Node
                 btn.Disabled = !_controller.CanBuy(index);
             }
 
-            btn.CustomMinimumSize = new Vector2(90, 32);
+            btn.CustomMinimumSize = new Vector2(88, 32);
             btn.Pressed += () => OnBuyPressed(index);
             column.AddChild(btn);
 
@@ -1028,7 +1216,7 @@ public partial class Main : Node
             var captured = candidate;
 
             var column = new VBoxContainer();
-            column.AddThemeConstantOverride("separation", 4);
+            column.AddThemeConstantOverride("separation", UiMetrics.Gap);
 
             string tag = captured.Kind == RouteKind.FlavorTrend && captured.Theme != null
                 ? $"风潮·{ToFlavorName(captured.Theme.Value)}"
@@ -1042,7 +1230,7 @@ public partial class Main : Node
 
             var btn = new Button();
             btn.Text = "就它";
-            btn.CustomMinimumSize = new Vector2(90, 32);
+            btn.CustomMinimumSize = new Vector2(88, 32);
             btn.Disabled = !_controller.CanChooseRoute;
             btn.Pressed += () => OnRoutePressed(captured);
             column.AddChild(btn);
@@ -1073,7 +1261,7 @@ public partial class Main : Node
             var captured = item;
             var btn = new Button();
             btn.Text = $"使用：{captured.Definition.Name}";
-            btn.CustomMinimumSize = new Vector2(120, 36);
+            btn.CustomMinimumSize = new Vector2(120, 32);
             btn.Disabled = !canUse;
             btn.Pressed += () => OnItemPressed(captured);
             btn.MouseEntered += () => OnItemHover(captured);
@@ -1137,20 +1325,22 @@ public partial class Main : Node
     private static string ToBowlLimitText(int limit) =>
         limit == int.MaxValue ? "∞" : limit.ToString();
 
-    private static string ToFlavorText(PotState pot)
+    /// <summary>
+    /// 七味条刷新：每条按「当前值 / 七味最大值」等比映射到 0..12 段，凸显相对分布。
+    /// 只读 PotState，不做流程判断；由 RefreshUI（事件驱动置脏）统一调用。
+    /// </summary>
+    private void RefreshFlavorBars(PotState pot)
     {
-        (string label, FlavorType type)[] flavors =
-        [
-            ("鲜", FlavorType.Umami),
-            ("甜", FlavorType.Sweet),
-            ("辣", FlavorType.Spicy),
-            ("酸", FlavorType.Sour),
-            ("苦", FlavorType.Bitter),
-            ("咸", FlavorType.Salty),
-            ("麻", FlavorType.Numbing),
-        ];
-        var parts = System.Array.ConvertAll(flavors, f => $"{f.label} {pot.GetFlavor(f.type)}");
-        return string.Join("   ", parts);
+        int max = 1;
+        foreach (var (_, type) in FlavorRows)
+            max = Mathf.Max(max, pot.GetFlavor(type));
+
+        for (int i = 0; i < FlavorRows.Length; i++)
+        {
+            int value = pot.GetFlavor(FlavorRows[i].Type);
+            _flavorBars[i].SetFilled(Mathf.RoundToInt(value / (float)max * FlavorBarSegments));
+            _flavorValueLabels[i].Text = value.ToString();
+        }
     }
 
     /// <summary>
