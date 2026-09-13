@@ -99,28 +99,28 @@ public static class PreviewIngredientTests
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.BowlNumber = 6; // ×2
-        var inst = IngredientData.CreateInstance("pepper"); // BaseScore=2，辣+1
+        var inst = IngredientData.CreateInstance("rice"); // BaseScore=1，鲜+1（提鲜不改鲜值）
         var es = new EffectSystem();
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
-        Assert(preview.PreviewBaseScore == 2, "第6碗辣椒预测 BaseScore 应为 2");
-        Assert(preview.PreviewFinalScore == 6,
-            "第6碗（×2）PreviewFinalScore 应含味道分：floor((基础分2 + 味道分1) × 2) = 6");
+        Assert(preview.PreviewBaseScore == 1, "第6碗米饭预测 BaseScore 应为 1");
+        Assert(preview.PreviewFinalScore == 4,
+            "第6碗（×2）PreviewFinalScore 应含味道分：floor((基础分1 + 味道分1) × 2) = 4");
     }
 
     static void Test_Preview_FinalScore_Bowl10_AppliesMultiplier()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.BowlNumber = 10; // ×32
-        var inst = IngredientData.CreateInstance("pepper"); // BaseScore=2，辣+1
+        var inst = IngredientData.CreateInstance("rice"); // BaseScore=1，鲜+1
         var es = new EffectSystem();
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
-        Assert(preview.PreviewBaseScore == 2, "第10碗辣椒预测 BaseScore 应为 2");
-        Assert(preview.PreviewFinalScore == 96,
-            "第10碗（×32）PreviewFinalScore 应含味道分：floor((基础分2 + 味道分1) × 32) = 96");
+        Assert(preview.PreviewBaseScore == 1, "第10碗米饭预测 BaseScore 应为 1");
+        Assert(preview.PreviewFinalScore == 64,
+            "第10碗（×32）PreviewFinalScore 应含味道分：floor((基础分1 + 味道分1) × 32) = 64");
     }
 
     static void Test_Preview_FinalScore_WithIceCube_IncludesEffectMultiplier()

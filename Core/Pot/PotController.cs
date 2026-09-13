@@ -3,6 +3,7 @@ using SevenSpices.Core.Companions;
 using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Flavors;
+using SevenSpices.Core.Flavors.Verbs;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
@@ -124,6 +125,9 @@ public class PotController
             throw new InvalidOperationException($"Cannot start next bowl: current bowl phase is {pot.CurrentBowlPhase}.");
 
         pot.BowlNumber++;
+        // 辣·余温：普通锅进入新碗时消耗一碗加成（最低 0）。最终锅不走本方法。
+        if (pot.HeatBowlsRemaining > 0)
+            pot.HeatBowlsRemaining--;
         StartBowl();
     }
 
@@ -223,7 +227,8 @@ public class PotController
             pot.AddFlavor(flavor, amount);
 
         // 味道互动层：在基础味道应用后、食材特殊效果前结算（设计文档 §七 / §11.1）。
-        _flavorInteraction.Resolve(pot, ingredient, _flavorConfig);
+        // baseScore 为本次加料的基础分增量，供苦·陈酿按比例存入陈酿池。
+        _flavorInteraction.Resolve(pot, ingredient, _flavorConfig, baseScore);
 
         var context = new EffectContext(pot.BowlNumber, gameState, pot, ingredient);
         effectSystem.TriggerAll(ingredient.Definition.Effects, ingredient.InstanceId, context);
@@ -266,6 +271,16 @@ public class PotController
                 $"Cannot calculate score: current bowl phase is {pot.CurrentBowlPhase}, expected ScoreCalculation.");
 
         ScoreCalculator.CalculateAndLock(pot);
+    }
+
+    /// <summary>
+    /// 立即全额兑现陈酿池：把 floor(池值) 并入 <see cref="PotState.BaseScore"/> 并清空池。
+    /// 依据架构 §32.6 / 设计文档 §24.2：最终锅不逐碗，陈酿池在结算前立即兑现；
+    /// 须在最终分数计算之前调用，保证兑现分数参与后续算分与食客判定。
+    /// </summary>
+    public void RealizeAgingPool()
+    {
+        AgingVerb.Realize(_gameState.Pot);
     }
 
     /// <summary>

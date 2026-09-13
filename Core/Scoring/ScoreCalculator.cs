@@ -35,20 +35,32 @@ public static class ScoreCalculator
     }
 
     /// <summary>
+    /// 计算实际生效的碗数倍率：碗数基础倍率 + 辣·余温的临时档位。
+    /// <see cref="PotState.HeatBowlsRemaining"/> &gt; 0 时叠加 <see cref="PotState.HeatBonusTiers"/> 档。
+    /// </summary>
+    public static int GetEffectiveMultiplier(PotState pot)
+    {
+        ArgumentNullException.ThrowIfNull(pot);
+
+        int bonus = pot.HeatBowlsRemaining > 0 ? pot.HeatBonusTiers : 0;
+        return GetMultiplier(pot.BowlNumber) + bonus;
+    }
+
+    /// <summary>
     /// 根据 pot.BowlNumber、pot.BaseScore、pot.FlavorScore 与 pot.FinalScoreMultiplier 计算最终分数，不修改任何状态。
-    /// 应用公式：Floor((BaseScore + FlavorScore) × BowlMultiplier × FinalScoreMultiplier)。
+    /// 应用公式：Floor((BaseScore + FlavorScore) × 生效碗数倍率 × FinalScoreMultiplier)。
     /// 供结算与预览共用，避免两处公式漂移。
     /// </summary>
     public static int ComputeFinalScore(PotState pot)
     {
         ArgumentNullException.ThrowIfNull(pot);
 
-        return (int)Math.Floor(pot.BaseScoreWithFlavor * GetMultiplier(pot.BowlNumber) * pot.FinalScoreMultiplier);
+        return (int)Math.Floor(pot.BaseScoreWithFlavor * GetEffectiveMultiplier(pot) * pot.FinalScoreMultiplier);
     }
 
     /// <summary>
     /// 根据 pot.BowlNumber、pot.BaseScore 与 pot.FlavorScore 计算最终分数，写入 pot.FinalScore，并锁定分数。
-    /// 应用公式：FinalScore = Floor((BaseScore + FlavorScore) × BowlMultiplier × FinalScoreMultiplier)。
+    /// 应用公式：FinalScore = Floor((BaseScore + FlavorScore) × 生效碗数倍率 × FinalScoreMultiplier)。
     /// 如果分数已经锁定，抛出 InvalidOperationException。
     /// </summary>
     public static void CalculateAndLock(PotState pot)

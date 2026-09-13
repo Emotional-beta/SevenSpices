@@ -495,6 +495,10 @@ public class GameController
     /// </summary>
     public void EndCooking()
     {
+        // 架构 §32.6 / 设计文档 §24.2：最终锅不逐碗，陈酿池在结算前立即全额兑现，
+        // 使其参与随后的分数计算与食客判定。
+        EnsurePotController().RealizeAgingPool();
+
         var customer = CustomerData.CreateNormalInstance();
         _runController.EndCooking(customer);
         _candidates.Clear();
@@ -508,7 +512,7 @@ public class GameController
 
         // 最终锅由 RunController 内部一次性结算；此处只读取已结算的状态发布事件。
         var pot = _state.Pot;
-        int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
+        int multiplier = ScoreCalculator.GetEffectiveMultiplier(pot);
         _events.Publish(new ScoreCalculatedEvent((int)Math.Floor(pot.BaseScoreWithFlavor), pot.FinalScore, multiplier));
         _events.Publish(new ScoreLockedEvent(pot.FinalScore));
         _events.Publish(new CustomerServedEvent(customer, 0));
@@ -644,7 +648,7 @@ public class GameController
     private void PublishScoreEvents()
     {
         var pot = _state.Pot;
-        int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
+        int multiplier = ScoreCalculator.GetEffectiveMultiplier(pot);
         _events.Publish(new ScoreCalculatedEvent((int)Math.Floor(pot.BaseScoreWithFlavor), pot.FinalScore, multiplier));
         _events.Publish(new ScoreLockedEvent(pot.FinalScore));
     }

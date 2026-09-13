@@ -152,7 +152,9 @@ public static class GameControllerEventTests
         var log = new EventLog();
         gc.Events.Subscribe(log.Handle);
 
-        gc.SelectIngredient(gc.CurrentCandidates[0].InstanceId);
+        // 选非辣食材（米饭）：辣·余温会临时提高碗数倍率，本测试验证的是无余温时的 ×1。
+        var chosen = gc.CurrentCandidates.First(c => c.Definition.Id == "rice");
+        gc.SelectIngredient(chosen.InstanceId);
 
         int calc = log.IndexOf<ScoreCalculatedEvent>();
         int locked = log.IndexOf<ScoreLockedEvent>();

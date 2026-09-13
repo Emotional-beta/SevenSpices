@@ -26,6 +26,14 @@ internal sealed class PotStateSnapshot : PotState
         snap.CurrentBowlPhase = source.CurrentBowlPhase;
         snap.TotalBaseScore = source.TotalBaseScore;
 
+        // F3 跨碗状态：必须深拷贝，否则悬停预测会与真实结算不一致（架构 §32.4）。
+        snap.AgingPool = source.AgingPool;
+        snap.AgingAdds = source.AgingAdds;
+        snap.IsSolidified = source.IsSolidified;
+        snap.HeatBowlsRemaining = source.HeatBowlsRemaining;
+        snap.HeatBonusTiers = source.HeatBonusTiers;
+        snap.UmamiMultiplier = source.UmamiMultiplier;
+
         foreach (var kv in source.Flavors)
             snap.Flavors[kv.Key] = kv.Value;
 

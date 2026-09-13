@@ -57,8 +57,8 @@ public static class RunProgressionTests
     }
 
     /// <summary>
-    /// 测试专用「咸」食材：咸味在 F2 中没有已实现的味道动词，
-    /// 用于最终锅提炼量的确定性验证（初始篮不含咸，故锅底咸味为 0）。
+    /// 测试专用「咸」食材：咸·固化只置固化状态、不消耗咸值，因此咸味可作为
+    /// 确定性累积的味道，用于锅底提炼量的验证（初始篮不含咸，故锅底咸味为 0）。
     /// </summary>
     static readonly IngredientDefinition SaltyTestIngredient = new(
         id: "test_salty",
@@ -68,23 +68,23 @@ public static class RunProgressionTests
         flavors: new() { [FlavorType.Salty] = 1 });
 
     /// <summary>
-    /// 用固定数量的辣椒填满食材篮，使本锅辣味确定性累积。
-    /// 辣椒（Spicy+1）在 F2 中没有已实现的味道动词，避免锅底断言被甜/酸动词干扰。
+    /// 用固定数量的测试咸味食材填满食材篮，使本锅咸味确定性累积。
+    /// 咸·固化不改变咸值，避免锅底断言被其它味道动词干扰。
     /// </summary>
-    static void FillBasketWithPepper(GameState state, int count)
+    static void FillBasketWithSalty(GameState state, int count)
     {
         state.Player.IngredientBasket.Clear();
         for (int i = 0; i < count; i++)
-            state.Player.IngredientBasket.Add(IngredientData.CreateInstance("pepper"));
+            state.Player.IngredientBasket.Add(new IngredientInstance(SaltyTestIngredient));
     }
 
     // ── 测试 ─────────────────────────────────────────────────────────────────
 
-    /// <summary>普通锅投满 10 个辣椒走到第 10 碗 Ended：锅底按 30% 向下取整提炼，且可推进。</summary>
+    /// <summary>普通锅投满 10 个测试咸味食材走到第 10 碗 Ended：锅底按 30% 向下取整提炼，且可推进。</summary>
     static void Test_NormalPotEnd_ExtractsBottom_And_CanAdvance()
     {
         var state = new GameState();
-        FillBasketWithPepper(state, 10);
+        FillBasketWithSalty(state, 10);
 
         var gc = new GameController(state, random: new Random(7));
         gc.StartNewGame();
@@ -94,9 +94,9 @@ public static class RunProgressionTests
 
         FinishCurrentPot(gc);
 
-        Assert(gc.Pot.GetFlavor(FlavorType.Spicy) == 10, "投入 10 个辣椒后本锅辣味应为 10");
-        Assert(state.Bottom.GetFlavor(FlavorType.Spicy) == 3,
-            $"10 × 30% = 3，锅底 Spicy 应为 3，实际 {state.Bottom.GetFlavor(FlavorType.Spicy)}");
+        Assert(gc.Pot.GetFlavor(FlavorType.Salty) == 10, "投入 10 个咸味食材后本锅咸味应为 10");
+        Assert(state.Bottom.GetFlavor(FlavorType.Salty) == 3,
+            $"10 × 30% = 3，锅底 Salty 应为 3，实际 {state.Bottom.GetFlavor(FlavorType.Salty)}");
         Assert(state.Bottom.GetFlavor(FlavorType.Umami) == 0,
             "本锅未出现过鲜味，不应写入锅底");
         Assert(gc.CanAdvanceToNextPot, "普通锅结束后 CanAdvanceToNextPot 应为 true");
@@ -155,14 +155,14 @@ public static class RunProgressionTests
     static void Test_PotEnd_ExtractIsNotRepeated()
     {
         var state = new GameState();
-        FillBasketWithPepper(state, 10);
+        FillBasketWithSalty(state, 10);
 
         var gc = new GameController(state, random: new Random(13));
         gc.StartNewGame();
         FinishCurrentPot(gc);
 
-        int spicyAfterFirst = state.Bottom.GetFlavor(FlavorType.Spicy);
-        Assert(spicyAfterFirst == 3, $"首次提炼 Spicy 应为 3，实际 {spicyAfterFirst}");
+        int saltyAfterFirst = state.Bottom.GetFlavor(FlavorType.Salty);
+        Assert(saltyAfterFirst == 3, $"首次提炼 Salty 应为 3，实际 {saltyAfterFirst}");
 
         // 锅已 Ended，公开守卫应全部为 false。
         Assert(!gc.CanSelectIngredient, "锅 Ended 后 CanSelectIngredient 应为 false");
@@ -179,7 +179,7 @@ public static class RunProgressionTests
         Assert(selectThrew, "锅 Ended 后 SelectIngredient 应抛 InvalidOperationException");
         Assert(skipThrew, "锅 Ended 后 SkipBowl 应抛 InvalidOperationException");
         Assert(gc.Pot.Phase == PotPhase.Ended, "被拒绝的调用不应改变锅阶段");
-        Assert(state.Bottom.GetFlavor(FlavorType.Spicy) == spicyAfterFirst,
+        Assert(state.Bottom.GetFlavor(FlavorType.Salty) == saltyAfterFirst,
             "被拒绝的调用不应放大锅底");
         Assert(gc.CanAdvanceToNextPot, "锅结束后仍应保持可推进");
     }
@@ -207,8 +207,8 @@ public static class RunProgressionTests
             if (i == 8)
             {
                 // 进入最终锅前替换篮为测试专用「咸」食材，用于验证最终锅结算后锅底确实被提炼。
-                // 选咸是因为：F2 未实现咸动词（不会触发味道互动），且初始篮（米饭/辣椒）不含咸，
-                // 最终锅起始的锅底咸味必为 0，从而提炼量确定。
+                // 选咸是因为：咸·固化只置状态、不消耗咸值（不干扰提炼量），且初始篮（米饭/辣椒）
+                // 不含咸，最终锅起始的锅底咸味必为 0，从而提炼量确定。
                 state.Player.IngredientBasket.Clear();
                 for (int j = 0; j < 5; j++)
                     state.Player.IngredientBasket.Add(new IngredientInstance(SaltyTestIngredient));

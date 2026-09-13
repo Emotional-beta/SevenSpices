@@ -710,14 +710,15 @@ public static class PotControllerTests
     static void Test_AddIngredient_AutoAppliesFlavors()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
+        // 用「咸」验证自动应用：咸·固化不消耗咸值，断言数值守恒。
         var def = new IngredientDefinition("filler", "填充", IngredientRarity.Common, 0,
-            flavors: new() { [FlavorType.Spicy] = 2 });
+            flavors: new() { [FlavorType.Salty] = 2 });
         var es = new EffectSystem();
 
         ctrl.AddIngredient(new IngredientInstance(def), es);
 
-        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 2,
-            "AddIngredient 应自动将 Definition.Flavors(Spicy+2) 应用到 PotState");
+        Assert(state.Pot.GetFlavor(FlavorType.Salty) == 2,
+            "AddIngredient 应自动将 Definition.Flavors(Salty+2) 应用到 PotState");
     }
 
     static void Test_AddIngredient_BaseScoreAndFlavorAndEffect_AllApplied()
@@ -725,14 +726,14 @@ public static class PotControllerTests
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         var effect = new LambdaEffect("add_score_5", ctx => ctx.PotState.BaseScore += 5);
         var def = new IngredientDefinition("filler", "填充", IngredientRarity.Common, 3,
-            flavors: new() { [FlavorType.Spicy] = 1 },
+            flavors: new() { [FlavorType.Salty] = 1 },
             effects: new[] { effect });
         var es = new EffectSystem();
 
         ctrl.AddIngredient(new IngredientInstance(def), es);
 
         Assert(state.Pot.BaseScore == 8, "BaseScore = 3(基础分) + 5(效果) = 8");
-        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 1, "Flavor 自动应用：辣=1");
+        Assert(state.Pot.GetFlavor(FlavorType.Salty) == 1, "Flavor 自动应用：咸=1");
     }
 
     static void Test_AddIngredient_Honey_FlavorAutoApplied_Then_ScaledEffect()
@@ -775,13 +776,16 @@ public static class PotControllerTests
         var es = new EffectSystem();
 
         ctrl.AddIngredient(IngredientData.CreateInstance("rice"), es);   // BaseScore=1, Umami+1
-        ctrl.AddIngredient(IngredientData.CreateInstance("pepper"), es); // BaseScore=2, Spicy+1
+        // 原「辣椒」辣+1 现会触发辣·余温消耗辣值；改用咸+1 的填充食材保持味道守恒。
+        var saltyFiller = new IngredientDefinition("salty_filler", "咸味填充",
+            IngredientRarity.Common, 2, flavors: new() { [FlavorType.Salty] = 1 });
+        ctrl.AddIngredient(new IngredientInstance(saltyFiller), es);     // BaseScore=2, Salty+1
         ctrl.AddIngredient(IngredientData.CreateInstance("egg"), es);    // BaseScore=3, Umami+1, 3种不同→+3
 
         // BaseScore = 1 + 2 + 3 + 3(效果) = 9
-        Assert(state.Pot.BaseScore == 9, "米饭+辣椒+鸡蛋：BaseScore = 1+2+3+3(鸡蛋效果) = 9");
+        Assert(state.Pot.BaseScore == 9, "米饭+咸味填充+鸡蛋：BaseScore = 1+2+3+3(鸡蛋效果) = 9");
         Assert(state.Pot.GetFlavor(FlavorType.Umami) == 2, "米饭鲜+1，鸡蛋鲜+1：鲜=2");
-        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 1, "辣椒辣+1：辣=1");
+        Assert(state.Pot.GetFlavor(FlavorType.Salty) == 1, "咸味填充咸+1：咸=1");
         Assert(state.Pot.Ingredients.Count == 3, "锅中应有3个食材实例");
     }
 

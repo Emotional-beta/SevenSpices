@@ -1,6 +1,7 @@
 using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
+using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Scoring;
 
@@ -131,16 +132,21 @@ public static class FlavorScoreTests
     static void Test_Preview_SnapshotDeepCopiesWeights()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
-        state.Pot.AddFlavor(FlavorType.Spicy, 2);
-        state.Pot.SetFlavorWeight(FlavorType.Spicy, 3.0);
+        // 用「咸」验证权重快照：咸·固化不消耗咸值，数值在动词结算后仍守恒。
+        state.Pot.AddFlavor(FlavorType.Salty, 2);
+        state.Pot.SetFlavorWeight(FlavorType.Salty, 3.0);
+        var def = new IngredientDefinition(
+            id: "salty_filler", name: "测试咸味", rarity: IngredientRarity.Common,
+            baseScore: 2, flavors: new() { [FlavorType.Salty] = 1 });
+        var inst = new IngredientInstance(def);
         var es = new EffectSystem();
 
-        var preview = ctrl.PreviewIngredient(IngredientData.CreateInstance("pepper"), es);
+        var preview = ctrl.PreviewIngredient(inst, es);
 
-        // 辣：2 + 1 = 3，权重 3.0 → 味道分 9；基础分 2 → 合计 11，第1碗 ×1
+        // 咸：2 + 1 = 3，权重 3.0 → 味道分 9；基础分 2 → 合计 11，第1碗 ×1
         Assert(preview.PreviewFinalScore == 11,
-            "预览应沿用快照中的味道权重（辣3 × 权重3 = 9，加基础分2 → 11）");
-        Assert(state.Pot.FlavorWeights[FlavorType.Spicy] == 3.0, "预览不得修改真实权重");
+            "预览应沿用快照中的味道权重（咸3 × 权重3 = 9，加基础分2 → 11）");
+        Assert(state.Pot.FlavorWeights[FlavorType.Salty] == 3.0, "预览不得修改真实权重");
     }
 
     static void Assert(bool condition, string message)

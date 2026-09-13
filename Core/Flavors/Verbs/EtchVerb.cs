@@ -7,6 +7,7 @@ namespace SevenSpices.Core.Flavors.Verbs;
 /// <para>
 /// 并列最低时按 <see cref="FlavorType"/> 声明顺序取最早的一个，保证可复现。
 /// 若不存在其他非零味道则不动作。
+/// 咸·固化生效时本锅免疫削减，蚀刻直接跳过（设计文档 §11.2）。
 /// </para>
 /// </summary>
 public sealed class EtchVerb : IFlavorVerb
@@ -16,6 +17,10 @@ public sealed class EtchVerb : IFlavorVerb
         ArgumentNullException.ThrowIfNull(context);
 
         var pot = context.Pot;
+
+        // 咸·固化：本锅剩余时间免疫削减 / 负面 / 物理改写。
+        if (pot.IsSolidified)
+            return;
 
         FlavorType? target = null;
         int lowest = int.MaxValue;

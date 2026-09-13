@@ -176,11 +176,12 @@ public static class FlavorVerbTests
         state.Pot.AddFlavor(FlavorType.Umami, 1);
 
         // 本次不加酸 → 即使锅内酸 > 0，酸动词也不应触发。
-        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 1)), new EffectSystem());
+        // 用「咸」作为对照味道：咸·固化不消耗咸值，数值可确定性断言。
+        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Salty, 1)), new EffectSystem());
 
         Assert(state.Pot.GetFlavor(FlavorType.Sour) == 1, "酸未增加 → 酸应保持 1");
         Assert(state.Pot.GetFlavor(FlavorType.Umami) == 1, "酸动词未触发 → 鲜不应被蚀");
-        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 1, "辣应正常 +1");
+        Assert(state.Pot.GetFlavor(FlavorType.Salty) == 1, "咸应正常 +1");
     }
 
     static void Test_NoSweetIncrement_DoesNotDuplicate()

@@ -48,6 +48,7 @@ public static class TestRunner
         ScoreCalculatorTests.RunAll();
         FlavorScoreTests.RunAll();
         FlavorVerbTests.RunAll();
+        ComplexVerbTests.RunAll();
         BottomExtractorTests.RunAll();
         RunControllerTests.RunAll();
         FinalPotSettlementTests.RunAll();

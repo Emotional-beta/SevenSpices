@@ -23,7 +23,14 @@ public sealed class FlavorContext
     /// <summary>味道系统的可调数值配置。</summary>
     public FlavorConfig Config { get; }
 
-    public FlavorContext(PotState pot, IngredientInstance source, FlavorType flavor, FlavorConfig config)
+    /// <summary>
+    /// 本次加料对基础分的增量（已含伙伴等修正），供苦·陈酿按比例存入陈酿池。
+    /// 共振等非「加料」触发的动词结算时为 0。
+    /// </summary>
+    public int BaseScoreAdded { get; }
+
+    public FlavorContext(
+        PotState pot, IngredientInstance source, FlavorType flavor, FlavorConfig config, int baseScoreAdded = 0)
     {
         ArgumentNullException.ThrowIfNull(pot);
         ArgumentNullException.ThrowIfNull(source);
@@ -33,5 +40,6 @@ public sealed class FlavorContext
         Source = source;
         Flavor = flavor;
         Config = config;
+        BaseScoreAdded = baseScoreAdded;
     }
 }

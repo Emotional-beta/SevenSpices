@@ -45,6 +45,27 @@ public class PotState
     /// <summary>本碗分数是否已锁定。</summary>
     public bool IsScoreLocked { get; set; }
 
+    /// <summary>
+    /// 苦·陈酿：尚未兑现的陈酿池（跨碗存活、随锅重置）。到期或最终锅结算时按 floor 值
+    /// 并入 <see cref="BaseScore"/> 并清空。设计文档 §11.2 / 架构 §32.4。
+    /// </summary>
+    public double AgingPool { get; set; }
+
+    /// <summary>苦·陈酿：自本次存入起累计的加料次数，达到配置到期次数后兑现。</summary>
+    public int AgingAdds { get; set; }
+
+    /// <summary>咸·固化：本锅剩余时间内是否免疫削减 / 负面 / 物理改写（设计文档 §11.2）。</summary>
+    public bool IsSolidified { get; set; }
+
+    /// <summary>辣·余温：碗数倍率加成还剩多少碗（&gt;0 时生效，普通锅进入新碗时递减）。</summary>
+    public int HeatBowlsRemaining { get; set; }
+
+    /// <summary>辣·余温：碗数倍率提高的档数（与 <see cref="HeatBowlsRemaining"/> 配合）。</summary>
+    public int HeatBonusTiers { get; set; }
+
+    /// <summary>鲜·提鲜：作用于非鲜味道分的乘算系数（默认 1.0，随味道种类数刷新）。</summary>
+    public double UmamiMultiplier { get; set; } = 1.0;
+
     /// <summary>当前锅的生命周期阶段。</summary>
     public PotPhase Phase { get; set; } = PotPhase.NotStarted;
 
@@ -71,17 +92,25 @@ public class PotState
         FlavorWeights[flavor] = Math.Max(0.0, weight);
 
     /// <summary>
-    /// 派生只读：味道分 = Σ(各味道值 × 该味道权重)，遍历全部 7 种味道。
-    /// 味道分属于基础分的一部分，但不单独存字段，避免与 Flavors 出现双份状态。
+    /// 派生只读：味道分 = 鲜的味道分 + （其余味道分之和）× <see cref="UmamiMultiplier"/>。
+    /// 遍历全部 7 种味道；鲜自身不参与提鲜乘算。味道分属于基础分的一部分，
+    /// 但不单独存字段，避免与 Flavors 出现双份状态。
     /// </summary>
     public double FlavorScore
     {
         get
         {
-            double sum = 0.0;
+            double umami = 0.0;
+            double others = 0.0;
             foreach (FlavorType flavor in Enum.GetValues<FlavorType>())
-                sum += GetFlavor(flavor) * GetFlavorWeight(flavor);
-            return sum;
+            {
+                double value = GetFlavor(flavor) * GetFlavorWeight(flavor);
+                if (flavor == FlavorType.Umami)
+                    umami += value;
+                else
+                    others += value;
+            }
+            return umami + others * UmamiMultiplier;
         }
     }
 
@@ -104,6 +133,12 @@ public class PotState
         TotalBaseScore = 0;
         FinalScoreMultiplier = 1.0;
         IsScoreLocked = false;
+        AgingPool = 0.0;
+        AgingAdds = 0;
+        IsSolidified = false;
+        HeatBowlsRemaining = 0;
+        HeatBonusTiers = 0;
+        UmamiMultiplier = 1.0;
         Phase = PotPhase.NotStarted;
         CurrentBowlPhase = BowlPhase.Start;
     }
