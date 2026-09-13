@@ -19,6 +19,7 @@ public static class ComplexVerbTests
         Test_Aging_DepositCompoundMatureAndClear();
         Test_FinalPot_EndCooking_RealizesAgingPoolImmediately();
         Test_Heat_ConsumesSpicyAndBoostsMultiplier();
+        Test_Heat_AccumulatesBelowCost_ThenTriggers();
         Test_Heat_DecrementsPerNextBowl_AndDoesNotStack();
         Test_FinalPot_Heat_DoesNotBoostMultiplier();
         Test_Umami_MultipliesNonUmamiOnly();
@@ -179,16 +180,43 @@ public static class ComplexVerbTests
             "第1碗 ×1 + 余温 1 档 = ×2");
     }
 
+    static void Test_Heat_AccumulatesBelowCost_ThenTriggers()
+    {
+        var ctrl = MakeControllerAtIngredientResolve(out var state); // BowlNumber=1，基础倍率 ×1
+
+        // 第 1 次加辣 +1 → 辣=1 < HeatCost=3：不点火、不消耗。
+        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 1)), new EffectSystem());
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 1, "辣=1 < HeatCost 应累积不消耗");
+        Assert(state.Pot.HeatBowlsRemaining == 0 && state.Pot.HeatBonusTiers == 0, "辣不足时不应设置余温");
+        Assert(ScoreCalculator.GetEffectiveMultiplier(state.Pot) == 1, "未点火时倍率应为基础 ×1");
+
+        // 第 2 次加辣 +1 → 辣=2 < HeatCost：仍不点火。
+        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 1)), new EffectSystem());
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 2, "辣=2 < HeatCost 应继续累积");
+        Assert(state.Pot.HeatBowlsRemaining == 0 && state.Pot.HeatBonusTiers == 0, "辣仍不足时不应设置余温");
+        Assert(ScoreCalculator.GetEffectiveMultiplier(state.Pot) == 1, "第二次仍未点火，倍率应为基础 ×1");
+
+        // 第 3 次加辣 +1 → 辣=3 ≥ HeatCost：触发，正好消耗 3 → 辣=0。
+        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 1)), new EffectSystem());
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 0, "辣达 3 应触发并正好消耗 HeatCost=3 → 辣=0");
+        Assert(state.Pot.HeatBowlsRemaining == 2, "触发后余温应持续 2 碗");
+        Assert(state.Pot.HeatBonusTiers == 1, "触发后余温应提高 1 档");
+        Assert(ScoreCalculator.GetEffectiveMultiplier(state.Pot) == 2, "第1碗 ×1 + 余温 1 档 = ×2");
+    }
+
     static void Test_Heat_DecrementsPerNextBowl_AndDoesNotStack()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.AddFlavor(FlavorType.Spicy, 3);
 
-        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 1)), new EffectSystem());
+        // 加辣 +3 → 辣=6 ≥ HeatCost=3 → 消耗 3 → 辣=3，触发。
+        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 3)), new EffectSystem());
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 3, "触发后辣应正好消耗 HeatCost=3：6 - 3 = 3");
         Assert(state.Pot.HeatBowlsRemaining == 2, "首次触发后剩余 2 碗");
 
-        // 不叠加：再次加辣只重置剩余碗数、取更高档位（此处仍为 1），不会变成 2 档。
-        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 1)), new EffectSystem());
+        // 不叠加：再次加辣（辣回到 6）只重置剩余碗数、取更高档位（此处仍为 1），不会变成 2 档。
+        ctrl.AddIngredient(MakeIngredient(0, (FlavorType.Spicy, 3)), new EffectSystem());
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 3, "再次触发应再次正好消耗 HeatCost=3");
         Assert(state.Pot.HeatBowlsRemaining == 2, "再次触发应重置剩余碗数而非叠加");
         Assert(state.Pot.HeatBonusTiers == 1, "档位不应叠加（仍为 1）");
 

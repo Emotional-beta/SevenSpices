@@ -3,9 +3,11 @@ using SevenSpices.Core.Game;
 namespace SevenSpices.Core.Flavors.Verbs;
 
 /// <summary>
-/// 辣·余温（爆发）：本次加料使辣增加时，消耗辣值（<see cref="Content.FlavorConfig.HeatCost"/>，
-/// 不足则消耗全部），使接下来若干碗的碗数倍率临时提高一档（<see cref="Content.FlavorConfig.HeatBonusTiers"/>）。
+/// 辣·余温（爆发）：本次加料使辣增加时，需辣值达到 <see cref="Content.FlavorConfig.HeatCost"/> 才点火，
+/// 正好消耗 <see cref="Content.FlavorConfig.HeatCost"/> 点辣，使接下来若干碗的碗数倍率临时提高一档
+/// （<see cref="Content.FlavorConfig.HeatBonusTiers"/>）。
 /// <para>
+/// 辣值不足 <see cref="Content.FlavorConfig.HeatCost"/> 时不消耗、不设置余温，让辣值自然累积到下一次加辣。
 /// 不叠加：再次触发时取更高档位并重置剩余碗数。生效倍率由
 /// <c>ScoreCalculator.GetEffectiveMultiplier</c> 读取，普通锅进入下一碗时递减剩余碗数。
 /// </para>
@@ -23,12 +25,13 @@ public sealed class HeatVerb : IFlavorVerb
         if (pot.IsFinalPot)
             return;
 
+        // 需辣值达到 HeatCost 才点火：不足则本次不消耗、不设置余温，让辣值自然累积到下次加辣。
         int spicy = pot.GetFlavor(FlavorType.Spicy);
-        if (spicy <= 0)
+        if (spicy < context.Config.HeatCost)
             return;
 
-        int cost = Math.Min(spicy, context.Config.HeatCost);
-        pot.AddFlavor(FlavorType.Spicy, -cost);
+        // 正好消耗 HeatCost 点辣（不是 min），排空门槛份量后本轮点火。
+        pot.AddFlavor(FlavorType.Spicy, -context.Config.HeatCost);
 
         pot.HeatBowlsRemaining = context.Config.HeatDurationBowls;
         pot.HeatBonusTiers = Math.Max(pot.HeatBonusTiers, context.Config.HeatBonusTiers);
