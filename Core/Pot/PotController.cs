@@ -1,6 +1,8 @@
 using SevenSpices.Core.Bottom;
 using SevenSpices.Core.Companions;
+using SevenSpices.Core.Content;
 using SevenSpices.Core.Effects;
+using SevenSpices.Core.Flavors;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
@@ -19,10 +21,17 @@ public class PotController
     /// <summary>伙伴系统（可选）：在固定时机调用伙伴扩展点。为 null 时行为与未持有伙伴完全一致。</summary>
     private readonly CompanionSystem? _companions;
 
-    public PotController(GameState gameState, CompanionSystem? companions = null)
+    /// <summary>味道互动层：在加料瞬间按味道声明顺序结算味道动词。为 null 时使用默认系统。</summary>
+    private readonly FlavorInteractionSystem _flavorInteraction;
+
+    public PotController(
+        GameState gameState,
+        CompanionSystem? companions = null,
+        FlavorInteractionSystem? flavorInteraction = null)
     {
         _gameState = gameState;
         _companions = companions;
+        _flavorInteraction = flavorInteraction ?? FlavorInteractionSystem.Default;
     }
 
     public GameState GameState => _gameState;
@@ -207,6 +216,9 @@ public class PotController
         pot.BaseScore += baseScore;
         foreach (var (flavor, amount) in ingredient.Definition.Flavors)
             pot.AddFlavor(flavor, amount);
+
+        // 味道互动层：在基础味道应用后、食材特殊效果前结算（设计文档 §七 / §11.1）。
+        _flavorInteraction.Resolve(pot, ingredient, FlavorConfig.Default);
 
         var context = new EffectContext(pot.BowlNumber, gameState, pot, ingredient);
         effectSystem.TriggerAll(ingredient.Definition.Effects, ingredient.InstanceId, context);

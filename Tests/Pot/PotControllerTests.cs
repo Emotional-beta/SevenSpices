@@ -711,13 +711,13 @@ public static class PotControllerTests
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         var def = new IngredientDefinition("filler", "填充", IngredientRarity.Common, 0,
-            flavors: new() { [FlavorType.Sweet] = 2 });
+            flavors: new() { [FlavorType.Spicy] = 2 });
         var es = new EffectSystem();
 
         ctrl.AddIngredient(new IngredientInstance(def), es);
 
-        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 2,
-            "AddIngredient 应自动将 Definition.Flavors(Sweet+2) 应用到 PotState");
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 2,
+            "AddIngredient 应自动将 Definition.Flavors(Spicy+2) 应用到 PotState");
     }
 
     static void Test_AddIngredient_BaseScoreAndFlavorAndEffect_AllApplied()
@@ -738,15 +738,16 @@ public static class PotControllerTests
     static void Test_AddIngredient_Honey_FlavorAutoApplied_Then_ScaledEffect()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
-        state.Pot.AddFlavor(FlavorType.Sweet, 2); // 预置甜=2
+        state.Pot.AddFlavor(FlavorType.Sweet, 1); // 预置甜=1
         var es = new EffectSystem();
 
         ctrl.AddIngredient(IngredientData.CreateInstance("honey"), es);
 
-        // 蜂蜜：自动应用 Sweet+1 → Sweet=3；基础分=2
+        // 蜂蜜：自动应用 Sweet+1 → 甜=2；甜·复制再 +1 → 甜=3；基础分=2
         // ScaledFlavorScoreEffect：floor(3/3)*2=2 → BaseScore+=2
         Assert(state.Pot.BaseScore == 4, "蜂蜜：2(基础分) + 2(ScaledFlavor:甜3/3*2) = 4");
-        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 3, "蜂蜜自动应用甜+1：2+1=3");
+        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 3,
+            "蜂蜜自动应用甜+1 后甜·复制再 +1：1+1+1=3");
     }
 
     static void Test_AddIngredient_IceCube_MultiplierEffect_FinalScore()
@@ -774,13 +775,13 @@ public static class PotControllerTests
         var es = new EffectSystem();
 
         ctrl.AddIngredient(IngredientData.CreateInstance("rice"), es);   // BaseScore=1, Umami+1
-        ctrl.AddIngredient(IngredientData.CreateInstance("sugar"), es);  // BaseScore=2, Sweet+1
+        ctrl.AddIngredient(IngredientData.CreateInstance("pepper"), es); // BaseScore=2, Spicy+1
         ctrl.AddIngredient(IngredientData.CreateInstance("egg"), es);    // BaseScore=3, Umami+1, 3种不同→+3
 
         // BaseScore = 1 + 2 + 3 + 3(效果) = 9
-        Assert(state.Pot.BaseScore == 9, "米饭+糖+鸡蛋：BaseScore = 1+2+3+3(鸡蛋效果) = 9");
+        Assert(state.Pot.BaseScore == 9, "米饭+辣椒+鸡蛋：BaseScore = 1+2+3+3(鸡蛋效果) = 9");
         Assert(state.Pot.GetFlavor(FlavorType.Umami) == 2, "米饭鲜+1，鸡蛋鲜+1：鲜=2");
-        Assert(state.Pot.GetFlavor(FlavorType.Sweet) == 1, "糖甜+1：甜=1");
+        Assert(state.Pot.GetFlavor(FlavorType.Spicy) == 1, "辣椒辣+1：辣=1");
         Assert(state.Pot.Ingredients.Count == 3, "锅中应有3个食材实例");
     }
 

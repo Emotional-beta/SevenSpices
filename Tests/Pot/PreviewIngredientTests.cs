@@ -99,12 +99,12 @@ public static class PreviewIngredientTests
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.BowlNumber = 6; // ×2
-        var inst = IngredientData.CreateInstance("sugar"); // BaseScore=2，甜+1
+        var inst = IngredientData.CreateInstance("pepper"); // BaseScore=2，辣+1
         var es = new EffectSystem();
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
-        Assert(preview.PreviewBaseScore == 2, "第6碗糖预测 BaseScore 应为 2");
+        Assert(preview.PreviewBaseScore == 2, "第6碗辣椒预测 BaseScore 应为 2");
         Assert(preview.PreviewFinalScore == 6,
             "第6碗（×2）PreviewFinalScore 应含味道分：floor((基础分2 + 味道分1) × 2) = 6");
     }
@@ -113,12 +113,12 @@ public static class PreviewIngredientTests
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.BowlNumber = 10; // ×32
-        var inst = IngredientData.CreateInstance("sugar"); // BaseScore=2，甜+1
+        var inst = IngredientData.CreateInstance("pepper"); // BaseScore=2，辣+1
         var es = new EffectSystem();
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
-        Assert(preview.PreviewBaseScore == 2, "第10碗糖预测 BaseScore 应为 2");
+        Assert(preview.PreviewBaseScore == 2, "第10碗辣椒预测 BaseScore 应为 2");
         Assert(preview.PreviewFinalScore == 96,
             "第10碗（×32）PreviewFinalScore 应含味道分：floor((基础分2 + 味道分1) × 32) = 96");
     }
@@ -142,23 +142,22 @@ public static class PreviewIngredientTests
 
     static void Test_Preview_WithFlavor_ConditionalEffect_NotYetMet()
     {
-        var ctrl = MakeControllerAtIngredientResolve(out var state);
-        // 当前甜=1，红枣加甜+1后甜=2，不满足甜≥3，不触发+2
-        state.Pot.AddFlavor(FlavorType.Sweet, 1);
+        var ctrl = MakeControllerAtIngredientResolve(out _);
+        // 当前甜=0，红枣加甜+1 后经甜·复制为 2，不满足甜≥3，不触发+2
         var inst = IngredientData.CreateInstance("red_date"); // BaseScore=1, Sweet+1, 甜≥3→+2
         var es = new EffectSystem();
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
-        // BaseScore=0+1(基础分)=1，甜=1+1=2，不触发 ConditionalEffect
+        // BaseScore=0+1(基础分)=1，甜=0+1+1(复制)=2，不触发 ConditionalEffect
         Assert(preview.PreviewBaseScore == 1, "甜<3时红枣预测 BaseScore 应为 1（不含条件效果）");
     }
 
     static void Test_Preview_WithFlavor_ConditionalEffect_Met()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
-        // 当前甜=2，红枣加甜+1后甜=3，满足甜≥3，触发+2
-        state.Pot.AddFlavor(FlavorType.Sweet, 2);
+        // 当前甜=1，红枣加甜+1 后经甜·复制为 3，满足甜≥3，触发+2
+        state.Pot.AddFlavor(FlavorType.Sweet, 1);
         var inst = IngredientData.CreateInstance("red_date"); // BaseScore=1, Sweet+1, 甜≥3→+2
         var es = new EffectSystem();
 

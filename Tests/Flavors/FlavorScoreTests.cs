@@ -131,16 +131,16 @@ public static class FlavorScoreTests
     static void Test_Preview_SnapshotDeepCopiesWeights()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
-        state.Pot.AddFlavor(FlavorType.Sweet, 2);
-        state.Pot.SetFlavorWeight(FlavorType.Sweet, 3.0);
+        state.Pot.AddFlavor(FlavorType.Spicy, 2);
+        state.Pot.SetFlavorWeight(FlavorType.Spicy, 3.0);
         var es = new EffectSystem();
 
-        var preview = ctrl.PreviewIngredient(IngredientData.CreateInstance("sugar"), es);
+        var preview = ctrl.PreviewIngredient(IngredientData.CreateInstance("pepper"), es);
 
-        // 甜：2 + 1 = 3，权重 3.0 → 味道分 9；基础分 2 → 合计 11，第1碗 ×1
+        // 辣：2 + 1 = 3，权重 3.0 → 味道分 9；基础分 2 → 合计 11，第1碗 ×1
         Assert(preview.PreviewFinalScore == 11,
-            "预览应沿用快照中的味道权重（甜3 × 权重3 = 9，加基础分2 → 11）");
-        Assert(state.Pot.FlavorWeights[FlavorType.Sweet] == 3.0, "预览不得修改真实权重");
+            "预览应沿用快照中的味道权重（辣3 × 权重3 = 9，加基础分2 → 11）");
+        Assert(state.Pot.FlavorWeights[FlavorType.Spicy] == 3.0, "预览不得修改真实权重");
     }
 
     static void Assert(bool condition, string message)
