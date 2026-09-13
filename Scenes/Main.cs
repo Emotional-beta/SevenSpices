@@ -1,5 +1,6 @@
 using Godot;
 using SevenSpices.Core.Effects;
+using SevenSpices.Core.Events;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
@@ -34,6 +35,9 @@ public partial class Main : Node
     private Button _nextPotButton = null!;
     private Button _endCookingButton = null!;
 
+    // 事件驱动刷新：任一游戏事件置脏，下一帧统一 RefreshUI。
+    private bool _uiDirty;
+
     // 动态 tooltip 面板（顶层覆盖，不参与布局，不拦截鼠标）
     private PanelContainer _tooltipPanel = null!;
     private Label _tooltipLabel = null!;
@@ -53,6 +57,14 @@ public partial class Main : Node
 
         BuildUI();
         RefreshUI();
+
+        // 核心系统在关键节点发布事件；表现层只监听并置脏，不反查流程。
+        _controller.Events.Subscribe(OnGameEvent);
+    }
+
+    private void OnGameEvent(GameEvent gameEvent)
+    {
+        _uiDirty = true;
     }
 
     private void BuildUI()
@@ -257,6 +269,12 @@ public partial class Main : Node
 
     public override void _Process(double delta)
     {
+        if (_uiDirty)
+        {
+            _uiDirty = false;
+            RefreshUI();
+        }
+
         if (!_tooltipNeedsReposition || !_tooltipPanel.Visible)
             return;
 
@@ -292,7 +310,6 @@ public partial class Main : Node
             return;
 
         _controller.SelectIngredient(candidate.InstanceId);
-        RefreshUI();
     }
 
     /// <summary>
@@ -305,7 +322,6 @@ public partial class Main : Node
             return;
 
         _controller.ChooseReward(candidate.InstanceId);
-        RefreshUI();
     }
 
     private void OnSkipBowlPressed()
@@ -314,7 +330,6 @@ public partial class Main : Node
             return;
 
         _controller.SkipBowl();
-        RefreshUI();
     }
 
     /// <summary>
@@ -327,7 +342,6 @@ public partial class Main : Node
             return;
 
         _controller.AdvanceToNextPot();
-        RefreshUI();
     }
 
     /// <summary>
@@ -340,7 +354,6 @@ public partial class Main : Node
             return;
 
         _controller.EndCooking();
-        RefreshUI();
     }
 
     private void RefreshUI()
@@ -483,7 +496,6 @@ public partial class Main : Node
             return;
 
         _controller.UseItem(item.InstanceId);
-        RefreshUI();
     }
 
     private void OnItemHover(ItemInstance item)

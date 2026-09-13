@@ -1,4 +1,5 @@
 using SevenSpices.Core.Content;
+using SevenSpices.Core.Events;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Pot;
@@ -216,6 +217,9 @@ public static class GameControllerTests
         int ingredientsBefore = gc.Pot.Ingredients.Count;
         var phaseBefore = gc.Pot.CurrentBowlPhase;
 
+        var events = new List<GameEvent>();
+        gc.Events.Subscribe(events.Add);
+
         var preview = gc.PreviewIngredient(rice);
 
         Assert(preview.PreviewBaseScore == baseBefore + rice.Definition.BaseScore,
@@ -227,6 +231,12 @@ public static class GameControllerTests
         Assert(gc.CurrentCandidates.Count == candidatesBefore, "预览不得修改候选");
         Assert(gc.Pot.Ingredients.Count == ingredientsBefore, "预览不得向锅中添加食材");
         Assert(gc.Pot.CurrentBowlPhase == phaseBefore, "预览不得修改碗阶段");
+
+        // 蜂蜜带 ScaledFlavorScoreEffect：正式 EffectSystem 会发布 EffectTriggeredEvent，
+        // 预览使用无总线的 _previewEffectSystem，因此不得发布任何 EffectTriggeredEvent。
+        gc.PreviewIngredient(IngredientData.CreateInstance("honey"));
+        Assert(!events.OfType<EffectTriggeredEvent>().Any(),
+            "PreviewIngredient 不应发布 EffectTriggeredEvent（预览使用无总线的 EffectSystem）");
     }
 
     /// <summary>有候选时（CanSkipBowl == false）调用 SkipBowl 应抛异常。</summary>

@@ -1,10 +1,12 @@
 using SevenSpices.Core.Content;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Effects;
+using SevenSpices.Core.Events;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 using SevenSpices.Core.Pot;
 using SevenSpices.Core.Run;
+using SevenSpices.Core.Scoring;
 
 namespace SevenSpices.Core.Game;
 
@@ -21,7 +23,9 @@ public class GameController
 
     private readonly GameState _state;
     private readonly RunController _runController;
+    private readonly EventBus _events;
     private readonly EffectSystem _effectSystem;
+    private readonly EffectSystem _previewEffectSystem = new();
     private readonly CustomerAppearanceConfig _appearance;
     private readonly PotRewardConfig _potReward;
     private readonly Random _random;
@@ -43,7 +47,8 @@ public class GameController
     {
         _state = state ?? new GameState();
         _runController = new RunController(_state);
-        _effectSystem = new EffectSystem();
+        _events = new EventBus();
+        _effectSystem = new EffectSystem(_events);
         _appearance = appearance ?? new CustomerAppearanceConfig();
         _potReward = potReward ?? new PotRewardConfig();
         _random = random ?? Random.Shared;
@@ -51,6 +56,9 @@ public class GameController
 
     /// <summary>游戏运行状态根。</summary>
     public GameState State => _state;
+
+    /// <summary>本局的只读事件总线，供表现层 / 伙伴系统等订阅刷新。</summary>
+    public EventBus Events => _events;
 
     public RunState Run => _state.Run;
     public PotState Pot => _state.Pot;
@@ -182,6 +190,8 @@ public class GameController
         var item = potController.UseItem(instanceId);
         potController.ApplyItemEffect(item, _effectSystem);
         _state.Pot.TotalBaseScore += _state.Pot.BaseScore - before;
+
+        _events.Publish(new ItemUsedEvent(item));
     }
 
     /// <summary>
@@ -194,7 +204,11 @@ public class GameController
         _state.Customer.ResetForPot();
 
         _potController = _runController.StartCurrentPot();
+        _events.Publish(new PotStartedEvent(
+            _state.Run.Chapter, _state.Run.PotIndex, _state.Run.IsFinalPot));
+
         _potController.StartBowl();
+        _events.Publish(new BowlStartedEvent(_state.Pot.BowlNumber));
 
         _pool = new IngredientPool(_state.Player.IngredientBasket, _random);
         _candidates.Clear();
@@ -210,6 +224,7 @@ public class GameController
         AdvanceToIngredientSelection(_potController);
 
         DrawCandidates();
+        _events.Publish(new IngredientDrawnEvent(_candidates));
     }
 
     /// <summary>
@@ -246,6 +261,7 @@ public class GameController
         // IngredientSelection → IngredientResolve
         potController.AdvanceBowlPhase();
         potController.AddIngredient(chosen, _effectSystem);
+        _events.Publish(new IngredientAddedEvent(chosen));
 
         FinishBowlAfterIngredient();
     }
@@ -279,6 +295,8 @@ public class GameController
         _state.Player.IngredientBasket.Add(chosen);
         _rewardCandidates.Clear();
         _rewardResolved = true;
+
+        _events.Publish(new RewardChosenEvent(chosen));
     }
 
     /// <summary>
@@ -288,7 +306,8 @@ public class GameController
     public IngredientPreview PreviewIngredient(IngredientInstance candidate)
     {
         ArgumentNullException.ThrowIfNull(candidate);
-        return EnsurePotController().PreviewIngredient(candidate, _effectSystem);
+        // 预览在快照上执行效果，属于只读推演，不应发布 EffectTriggeredEvent，故使用无总线的 EffectSystem。
+        return EnsurePotController().PreviewIngredient(candidate, _previewEffectSystem);
     }
 
     /// <summary>
@@ -297,11 +316,22 @@ public class GameController
     /// </summary>
     public void EndCooking()
     {
-        _runController.EndCooking(CustomerData.CreateNormalInstance());
+        var customer = CustomerData.CreateNormalInstance();
+        _runController.EndCooking(customer);
         _candidates.Clear();
         _pool = null;
         _rewardCandidates.Clear();
         _rewardResolved = false;
+
+        // 最终锅由 RunController 内部一次性结算；此处只读取已结算的状态发布事件。
+        var pot = _state.Pot;
+        int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
+        _events.Publish(new ScoreCalculatedEvent(pot.BaseScore, pot.FinalScore, multiplier));
+        _events.Publish(new ScoreLockedEvent(pot.FinalScore));
+        _events.Publish(new CustomerServedEvent(customer, 0));
+        _events.Publish(new PotEndedEvent(
+            _state.Run.Chapter, _state.Run.PotIndex, _state.Run.IsFinalPot));
+        _events.Publish(new RunCompletedEvent());
     }
 
     /// <summary>
@@ -316,8 +346,11 @@ public class GameController
             var potController = EnsurePotController();
             // 最终锅 StartBowl 不重置分数；回到 IngredientSelection 继续抽。
             potController.StartBowl();
+            _events.Publish(new BowlStartedEvent(_state.Pot.BowlNumber));
+
             AdvanceToIngredientSelection(potController);
             DrawCandidates();
+            _events.Publish(new IngredientDrawnEvent(_candidates));
             return;
         }
 
@@ -336,9 +369,14 @@ public class GameController
                && _state.Pot.Phase == PotPhase.InProgress)
         {
             if (_state.Pot.CurrentBowlPhase == BowlPhase.ScoreCalculation)
+            {
                 potController.CalculateScore();
+                PublishScoreEvents();
+            }
             else if (_state.Pot.CurrentBowlPhase == BowlPhase.Serving)
+            {
                 ServeCurrentCustomer();
+            }
 
             potController.AdvanceBowlPhase();
         }
@@ -346,14 +384,21 @@ public class GameController
         if (_state.Pot.Phase == PotPhase.InProgress)
         {
             potController.StartNextBowl();
+            _events.Publish(new BowlStartedEvent(_state.Pot.BowlNumber));
+
             AssignCustomerForBowl();
             AdvanceToIngredientSelection(potController);
+
             DrawCandidates();
+            _events.Publish(new IngredientDrawnEvent(_candidates));
         }
         else
         {
             // 锅结束：提炼锅底（恰好一次），本锅池与候选一并作废，篮不变。
             potController.ClosePot();
+            _events.Publish(new PotEndedEvent(
+                _state.Run.Chapter, _state.Run.PotIndex, _state.Run.IsFinalPot));
+
             _pool = null;
             _candidates.Clear();
 
@@ -368,7 +413,18 @@ public class GameController
             // Core 层不引入 Godot / 日志，此处静默处理即可。
             if (_rewardCandidates.Count == 0)
                 _rewardResolved = true;
+
+            _events.Publish(new RewardOfferedEvent(_rewardCandidates));
         }
+    }
+
+    /// <summary>在分数计算并锁定后发布 ScoreCalculatedEvent + ScoreLockedEvent（顺序固定）。</summary>
+    private void PublishScoreEvents()
+    {
+        var pot = _state.Pot;
+        int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
+        _events.Publish(new ScoreCalculatedEvent(pot.BaseScore, pot.FinalScore, multiplier));
+        _events.Publish(new ScoreLockedEvent(pot.FinalScore));
     }
 
     /// <summary>
@@ -392,21 +448,29 @@ public class GameController
         if (customer == null)
             return;
 
+        bool isRare = customer.Definition.IsRare;
+
         // 稀有食客满意时：食材 + 道具各掉落 1 个；不满意时两者都被丢弃（既有语义）。
-        IngredientInstance? rewardIngredient = customer.Definition.IsRare
+        IngredientInstance? rewardIngredient = isRare
             ? IngredientData.CreateRandomInstance(_random)
             : null;
-        ItemInstance? rewardItem = customer.Definition.IsRare
+        ItemInstance? rewardItem = isRare
             ? ItemData.CreateRandomInstance(_random)
             : null;
 
-        CustomerService.EvaluateAndReward(
+        bool satisfied = CustomerService.EvaluateAndReward(
             _state.Customer,
             _state.Pot,
             _state.Player,
             _appearance.BaseGoldReward,
             rewardIngredient,
             rewardItem);
+
+        // 普通食客获得基础金币；稀有食客不发金币（既有语义）。
+        int goldAwarded = isRare ? 0 : _appearance.BaseGoldReward;
+        _events.Publish(new CustomerServedEvent(customer, goldAwarded));
+        if (satisfied)
+            _events.Publish(new CustomerSatisfiedEvent(customer));
     }
 
     private void DrawCandidates()
