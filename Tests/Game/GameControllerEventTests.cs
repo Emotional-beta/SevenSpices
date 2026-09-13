@@ -293,7 +293,7 @@ public static class GameControllerEventTests
         var gc = new GameController(new GameState(), NoRare(), new Random(4321));
 
         var log = new EventLog();
-        int scoreAtCalc = -1, scoreAtLock = -1;
+        int scoreAtCalc = -1, scoreAtLock = -1, baseAtCalc = -1;
         gc.Events.Subscribe(gameEvent =>
         {
             log.Events.Add(gameEvent);
@@ -301,6 +301,7 @@ public static class GameControllerEventTests
             {
                 case ScoreCalculatedEvent:
                     scoreAtCalc = gc.Pot.FinalScore;
+                    baseAtCalc = (int)Math.Floor(gc.Pot.BaseScoreWithFlavor);
                     break;
                 case ScoreLockedEvent:
                     scoreAtLock = gc.Pot.FinalScore;
@@ -323,6 +324,8 @@ public static class GameControllerEventTests
         var lockedEvent = log.Of<ScoreLockedEvent>().Single();
         Assert(calcEvent.FinalScore == scoreAtCalc,
             $"ScoreCalculatedEvent.FinalScore({calcEvent.FinalScore}) 应等于派发时 Pot.FinalScore({scoreAtCalc})");
+        Assert(calcEvent.BaseScore == baseAtCalc,
+            $"ScoreCalculatedEvent.BaseScore({calcEvent.BaseScore}) 应等于派发时含味道分基础分({baseAtCalc})，口径不得漏掉味道分");
         Assert(lockedEvent.FinalScore == scoreAtLock,
             $"ScoreLockedEvent.FinalScore({lockedEvent.FinalScore}) 应等于派发时 Pot.FinalScore({scoreAtLock})");
         Assert(calcEvent.FinalScore == lockedEvent.FinalScore,

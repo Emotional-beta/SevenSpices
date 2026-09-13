@@ -26,6 +26,7 @@ public static class GameControllerTests
         Test_SelectIngredient_Or_SkipBowl_OutsideSelectionPhase_Throws();
         Test_FinalPot_SelectIngredient_AccumulatesUntilEndCooking();
         Test_EndCooking_NonFinalPot_Throws();
+        Test_FlavorConfig_InjectedThroughGameController_AffectsDuplicate();
 
         Console.WriteLine("All GameControllerTests passed.");
     }
@@ -343,6 +344,30 @@ public static class GameControllerTests
         catch (InvalidOperationException) { threw = true; }
 
         Assert(threw, "非最终锅 EndCooking 应抛 InvalidOperationException");
+    }
+
+    /// <summary>
+    /// FlavorConfig 可从真实入口注入并生效：篮中仅有糖时选中加糖，
+    /// 注入 SweetDuplicateAmount=2 后甜·复制应 +2（甜 1 → 3），证明配置贯通到真实结算路径。
+    /// </summary>
+    static void Test_FlavorConfig_InjectedThroughGameController_AffectsDuplicate()
+    {
+        var state = new GameState();
+        state.Player.IngredientBasket.Add(IngredientData.CreateInstance("sugar"));
+
+        var appearance = new CustomerAppearanceConfig { RareBowlNumbers = Array.Empty<int>() };
+        var gc = new GameController(
+            state, appearance, new Random(1),
+            flavorConfig: new FlavorConfig { SweetDuplicateAmount = 2 });
+        gc.StartNewGame();
+
+        Assert(gc.CurrentCandidates.Count == 1, "篮中仅有糖时应抽到 1 个候选");
+        Assert(gc.CurrentCandidates[0].Definition.Id == "sugar", "候选应为糖");
+
+        gc.SelectIngredient(gc.CurrentCandidates[0].InstanceId);
+
+        Assert(gc.Pot.GetFlavor(FlavorType.Sweet) == 3,
+            $"注入 SweetDuplicateAmount=2 时，糖基础甜 1 + 复制 2 应为 3，实际 {gc.Pot.GetFlavor(FlavorType.Sweet)}");
     }
 
     static void Assert(bool condition, string message)

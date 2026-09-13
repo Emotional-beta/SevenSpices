@@ -1,4 +1,5 @@
 using SevenSpices.Core.Companions;
+using SevenSpices.Core.Content;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
@@ -24,11 +25,15 @@ public class RunController
     private readonly GameState _gameState;
     private readonly CompanionSystem? _companions;
 
-    public RunController(GameState gameState, CompanionSystem? companions = null)
+    /// <summary>味道系统可调数值配置，透传给每一锅的 PotController。为 null 时使用 <see cref="FlavorConfig.Default"/>。</summary>
+    private readonly FlavorConfig? _flavorConfig;
+
+    public RunController(GameState gameState, CompanionSystem? companions = null, FlavorConfig? flavorConfig = null)
     {
         ArgumentNullException.ThrowIfNull(gameState);
         _gameState = gameState;
         _companions = companions;
+        _flavorConfig = flavorConfig;
     }
 
     public GameState GameState => _gameState;
@@ -65,7 +70,7 @@ public class RunController
         var run = _gameState.Run;
         int bowlLimit = run.IsFinalPot ? int.MaxValue : 10;
         _gameState.Pot.Reset(bowlLimit);
-        var ctrl = new PotController(_gameState, _companions);
+        var ctrl = new PotController(_gameState, _companions, flavorConfig: _flavorConfig);
         ctrl.StartPot();
         return ctrl;
     }
@@ -136,7 +141,7 @@ public class RunController
         // 同时 SatisfactionEvaluator 读的就是 FinalScore，算分必须发生在 EvaluateAndReward 之前。
         ScoreCalculator.CalculateAndLock(pot);
 
-        var ctrl = new PotController(_gameState, _companions);
+        var ctrl = new PotController(_gameState, _companions, flavorConfig: _flavorConfig);
         ctrl.EndPot();
 
         CustomerService.AssignCustomer(_gameState.Customer, customer);

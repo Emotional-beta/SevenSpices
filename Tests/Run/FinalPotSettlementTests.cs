@@ -359,12 +359,12 @@ public static class FinalPotSettlementTests
         Assert(accumulated == 3, "米饭+糖应累积 BaseScore=3");
         Assert(state.Pot.FinalScore == 0, "结算前最终锅不应逐碗锁分，FinalScore 仍为 0");
 
-        // 结算用「累积基础分」含味道分：米饭鲜+1 + 糖甜+1 = 味道分 2。
+        // 结算用「累积基础分」含味道分：米饭鲜+1，糖甜+1 触发甜·复制再复制最高味甜 1 → 味道分 3。
         int totalBase = (int)Math.Floor(state.Pot.BaseScoreWithFlavor);
         run.EndCooking(MakeNormalCustomer());
 
         Assert(state.Pot.FinalScore == totalBase * 32,
-            $"最终锅应按「基础分{accumulated} + 味道分2 = {totalBase}」× 32 一次性结算");
+            $"最终锅应按「基础分{accumulated} + 味道分3 = {totalBase}」× 32 一次性结算");
     }
 
     /// <summary>最终锅 StartingBowl 不再清零 BaseScore，整锅分数累积成「一大碗」。</summary>

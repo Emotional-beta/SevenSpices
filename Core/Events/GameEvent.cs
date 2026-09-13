@@ -91,8 +91,16 @@ public sealed class EffectTriggeredEvent : GameEvent
 /// <summary>一碗分数计算完成（倍率已应用、写入 FinalScore 之前/同时）。</summary>
 public sealed class ScoreCalculatedEvent : GameEvent
 {
+    /// <summary>
+    /// 含味道分的基础分（<c>floor(BaseScore + FlavorScore)</c>），即乘倍率前的实际计分基数。
+    /// 语义与设计文档一致：基础分包含食材基础分、其它效果分与味道分。
+    /// </summary>
     public int BaseScore { get; }
+
+    /// <summary>倍率应用后的最终分数。</summary>
     public int FinalScore { get; }
+
+    /// <summary>本碗应用的分值倍率。</summary>
     public int Multiplier { get; }
 
     public ScoreCalculatedEvent(int baseScore, int finalScore, int multiplier)

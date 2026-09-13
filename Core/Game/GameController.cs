@@ -33,6 +33,7 @@ public class GameController
     private readonly ShopConfig _shopConfig;
     private readonly Random _random;
     private readonly CompanionSystem _companions;
+    private readonly FlavorConfig _flavorConfig;
     private PotController? _potController;
     private IngredientPool? _pool;
     private readonly List<IngredientInstance> _candidates = new();
@@ -48,17 +49,20 @@ public class GameController
     /// <param name="random">随机源（食客出现、稀有掉落、锅结束奖励、商店陈列抽取）；为空则使用 <see cref="Random.Shared"/>。</param>
     /// <param name="potReward">锅结束奖励配置（X 选 1）；为空则使用默认配置。</param>
     /// <param name="shop">商店配置（陈列数量与价格）；为空则使用默认配置。</param>
+    /// <param name="flavorConfig">味道系统可调数值配置；为空则使用 <see cref="FlavorConfig.Default"/>，并透传给每一锅的 PotController（预览与真实结算共用同一份）。</param>
     public GameController(
         GameState? state = null,
         CustomerAppearanceConfig? appearance = null,
         Random? random = null,
         PotRewardConfig? potReward = null,
-        ShopConfig? shop = null)
+        ShopConfig? shop = null,
+        FlavorConfig? flavorConfig = null)
     {
         _state = state ?? new GameState();
+        _flavorConfig = flavorConfig ?? FlavorConfig.Default;
         // 伙伴系统复用 PlayerState.Companions 的同一列表，不另存副本；须在 RunController 之前建立。
         _companions = new CompanionSystem(_state.Player.Companions);
-        _runController = new RunController(_state, _companions);
+        _runController = new RunController(_state, _companions, _flavorConfig);
         _events = new EventBus();
         _effectSystem = new EffectSystem(_events);
         _appearance = appearance ?? new CustomerAppearanceConfig();
@@ -505,7 +509,7 @@ public class GameController
         // 最终锅由 RunController 内部一次性结算；此处只读取已结算的状态发布事件。
         var pot = _state.Pot;
         int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
-        _events.Publish(new ScoreCalculatedEvent(pot.BaseScore, pot.FinalScore, multiplier));
+        _events.Publish(new ScoreCalculatedEvent((int)Math.Floor(pot.BaseScoreWithFlavor), pot.FinalScore, multiplier));
         _events.Publish(new ScoreLockedEvent(pot.FinalScore));
         _events.Publish(new CustomerServedEvent(customer, 0));
         _events.Publish(new PotEndedEvent(
@@ -641,7 +645,7 @@ public class GameController
     {
         var pot = _state.Pot;
         int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
-        _events.Publish(new ScoreCalculatedEvent(pot.BaseScore, pot.FinalScore, multiplier));
+        _events.Publish(new ScoreCalculatedEvent((int)Math.Floor(pot.BaseScoreWithFlavor), pot.FinalScore, multiplier));
         _events.Publish(new ScoreLockedEvent(pot.FinalScore));
     }
 
@@ -716,5 +720,5 @@ public class GameController
     /// （测试 / 存档恢复），则基于同一状态惰性创建，不再重复 StartPot。
     /// </summary>
     private PotController EnsurePotController()
-        => _potController ??= new PotController(_state, _companions);
+        => _potController ??= new PotController(_state, _companions, flavorConfig: _flavorConfig);
 }

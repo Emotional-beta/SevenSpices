@@ -24,14 +24,19 @@ public class PotController
     /// <summary>味道互动层：在加料瞬间按味道声明顺序结算味道动词。为 null 时使用默认系统。</summary>
     private readonly FlavorInteractionSystem _flavorInteraction;
 
+    /// <summary>味道系统可调数值配置。为 null 时使用 <see cref="FlavorConfig.Default"/>。</summary>
+    private readonly FlavorConfig _flavorConfig;
+
     public PotController(
         GameState gameState,
         CompanionSystem? companions = null,
-        FlavorInteractionSystem? flavorInteraction = null)
+        FlavorInteractionSystem? flavorInteraction = null,
+        FlavorConfig? flavorConfig = null)
     {
         _gameState = gameState;
         _companions = companions;
         _flavorInteraction = flavorInteraction ?? FlavorInteractionSystem.Default;
+        _flavorConfig = flavorConfig ?? FlavorConfig.Default;
     }
 
     public GameState GameState => _gameState;
@@ -218,7 +223,7 @@ public class PotController
             pot.AddFlavor(flavor, amount);
 
         // 味道互动层：在基础味道应用后、食材特殊效果前结算（设计文档 §七 / §11.1）。
-        _flavorInteraction.Resolve(pot, ingredient, FlavorConfig.Default);
+        _flavorInteraction.Resolve(pot, ingredient, _flavorConfig);
 
         var context = new EffectContext(pot.BowlNumber, gameState, pot, ingredient);
         effectSystem.TriggerAll(ingredient.Definition.Effects, ingredient.InstanceId, context);
