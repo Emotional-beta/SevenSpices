@@ -16,7 +16,7 @@ public static class PreviewIngredientTests
     public static void RunAll()
     {
         Test_Preview_BasicScore();
-        Test_Preview_FinalScore_Bowl1_EqualsBaseScore();
+        Test_Preview_FinalScore_Bowl1_IncludesFlavorScore();
         Test_Preview_FinalScore_Bowl6_AppliesMultiplier();
         Test_Preview_FinalScore_Bowl10_AppliesMultiplier();
         Test_Preview_FinalScore_WithIceCube_IncludesEffectMultiplier();
@@ -81,46 +81,46 @@ public static class PreviewIngredientTests
 
     // ── A2. 最终分预测（应用碗倍率与效果倍率） ────────────────────────────────
 
-    static void Test_Preview_FinalScore_Bowl1_EqualsBaseScore()
+    static void Test_Preview_FinalScore_Bowl1_IncludesFlavorScore()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.BowlNumber = 1; // ×1
-        var inst = IngredientData.CreateInstance("rice"); // BaseScore=1
+        var inst = IngredientData.CreateInstance("rice"); // BaseScore=1，鲜+1
         var es = new EffectSystem();
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
         Assert(preview.PreviewBaseScore == 1, "第1碗米饭预测 BaseScore 应为 1");
-        Assert(preview.PreviewFinalScore == preview.PreviewBaseScore,
-            "第1碗（×1）且无效果倍率时，PreviewFinalScore 应等于 PreviewBaseScore");
+        Assert(preview.PreviewFinalScore == 2,
+            "第1碗（×1）PreviewFinalScore 应含味道分：floor((基础分1 + 味道分1) × 1) = 2");
     }
 
     static void Test_Preview_FinalScore_Bowl6_AppliesMultiplier()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.BowlNumber = 6; // ×2
-        var inst = IngredientData.CreateInstance("sugar"); // BaseScore=2
+        var inst = IngredientData.CreateInstance("sugar"); // BaseScore=2，甜+1
         var es = new EffectSystem();
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
         Assert(preview.PreviewBaseScore == 2, "第6碗糖预测 BaseScore 应为 2");
-        Assert(preview.PreviewFinalScore == (int)Math.Floor(preview.PreviewBaseScore * 2.0),
-            "第6碗（×2）PreviewFinalScore 应为 floor(BaseScore × 2)");
+        Assert(preview.PreviewFinalScore == 6,
+            "第6碗（×2）PreviewFinalScore 应含味道分：floor((基础分2 + 味道分1) × 2) = 6");
     }
 
     static void Test_Preview_FinalScore_Bowl10_AppliesMultiplier()
     {
         var ctrl = MakeControllerAtIngredientResolve(out var state);
         state.Pot.BowlNumber = 10; // ×32
-        var inst = IngredientData.CreateInstance("sugar"); // BaseScore=2
+        var inst = IngredientData.CreateInstance("sugar"); // BaseScore=2，甜+1
         var es = new EffectSystem();
 
         var preview = ctrl.PreviewIngredient(inst, es);
 
         Assert(preview.PreviewBaseScore == 2, "第10碗糖预测 BaseScore 应为 2");
-        Assert(preview.PreviewFinalScore == (int)Math.Floor(preview.PreviewBaseScore * 32.0),
-            "第10碗（×32）PreviewFinalScore 应为 floor(BaseScore × 32)");
+        Assert(preview.PreviewFinalScore == 96,
+            "第10碗（×32）PreviewFinalScore 应含味道分：floor((基础分2 + 味道分1) × 32) = 96");
     }
 
     static void Test_Preview_FinalScore_WithIceCube_IncludesEffectMultiplier()

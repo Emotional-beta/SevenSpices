@@ -35,20 +35,20 @@ public static class ScoreCalculator
     }
 
     /// <summary>
-    /// 根据 pot.BowlNumber、pot.BaseScore 与 pot.FinalScoreMultiplier 计算最终分数，不修改任何状态。
-    /// 应用公式：Floor(BaseScore × BowlMultiplier × FinalScoreMultiplier)。
+    /// 根据 pot.BowlNumber、pot.BaseScore、pot.FlavorScore 与 pot.FinalScoreMultiplier 计算最终分数，不修改任何状态。
+    /// 应用公式：Floor((BaseScore + FlavorScore) × BowlMultiplier × FinalScoreMultiplier)。
     /// 供结算与预览共用，避免两处公式漂移。
     /// </summary>
     public static int ComputeFinalScore(PotState pot)
     {
         ArgumentNullException.ThrowIfNull(pot);
 
-        return (int)Math.Floor(pot.BaseScore * GetMultiplier(pot.BowlNumber) * pot.FinalScoreMultiplier);
+        return (int)Math.Floor(pot.BaseScoreWithFlavor * GetMultiplier(pot.BowlNumber) * pot.FinalScoreMultiplier);
     }
 
     /// <summary>
-    /// 根据 pot.BowlNumber 和 pot.BaseScore 计算最终分数，写入 pot.FinalScore，并锁定分数。
-    /// 应用公式：FinalScore = Floor(BaseScore × BowlMultiplier × FinalScoreMultiplier)。
+    /// 根据 pot.BowlNumber、pot.BaseScore 与 pot.FlavorScore 计算最终分数，写入 pot.FinalScore，并锁定分数。
+    /// 应用公式：FinalScore = Floor((BaseScore + FlavorScore) × BowlMultiplier × FinalScoreMultiplier)。
     /// 如果分数已经锁定，抛出 InvalidOperationException。
     /// </summary>
     public static void CalculateAndLock(PotState pot)

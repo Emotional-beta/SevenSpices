@@ -260,10 +260,10 @@ public class GameController
 
         var potController = EnsurePotController();
 
-        int before = _state.Pot.BaseScore;
+        double totalBefore = _state.Pot.BaseScore + _state.Pot.FlavorScore;
         var item = potController.UseItem(instanceId);
         potController.ApplyItemEffect(item, _effectSystem);
-        _state.Pot.TotalBaseScore += _state.Pot.BaseScore - before;
+        _state.Pot.TotalBaseScore += (int)Math.Floor(_state.Pot.BaseScore + _state.Pot.FlavorScore - totalBefore);
 
         _events.Publish(new ItemUsedEvent(item));
     }

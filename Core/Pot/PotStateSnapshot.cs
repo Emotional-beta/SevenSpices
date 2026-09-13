@@ -29,6 +29,9 @@ internal sealed class PotStateSnapshot : PotState
         foreach (var kv in source.Flavors)
             snap.Flavors[kv.Key] = kv.Value;
 
+        foreach (var kv in source.FlavorWeights)
+            snap.FlavorWeights[kv.Key] = kv.Value;
+
         foreach (var ing in source.Ingredients)
             snap.Ingredients.Add(ing);
 

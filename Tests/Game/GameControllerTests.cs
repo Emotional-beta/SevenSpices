@@ -122,7 +122,8 @@ public static class GameControllerTests
 
         Assert(gc.Pot.Ingredients.Any(i => i.InstanceId == rice.InstanceId),
             "选中实例应进入 Pot.Ingredients");
-        Assert(gc.Pot.TotalBaseScore == 1, "米饭基础分 1 应计入 TotalBaseScore");
+        Assert(gc.Pot.TotalBaseScore == 2,
+            "米饭基础分 1 + 味道分(鲜1) 应计入 TotalBaseScore");
         Assert(gc.Pot.GetFlavor(FlavorType.Umami) == 1, "米饭应使鲜味 +1");
         Assert(gc.RemainingPoolCount == 5, "本锅池应从 6 减少到 5");
         Assert(gc.Player.IngredientBasket.Count == basketBefore,

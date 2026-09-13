@@ -151,6 +151,7 @@ public class PotController
     /// <summary>
     /// 在 IngredientResolve 阶段将食材加入锅：先应用 Definition.BaseScore 和 Definition.Flavors，
     /// 再通过 EffectSystem 触发效果链。效果触发时能读到包含本食材基础数据的最新状态。
+    /// 本锅累计基础分按「(BaseScore + FlavorScore)」的加入前后差值记账，包含味道分变化。
     /// </summary>
     public void AddIngredient(IngredientInstance ingredient, EffectSystem effectSystem)
     {
@@ -162,10 +163,10 @@ public class PotController
             throw new InvalidOperationException(
                 $"Cannot add ingredient: current bowl phase is {pot.CurrentBowlPhase}, expected IngredientResolve.");
 
-        int scoreBefore = pot.BaseScore;
+        double totalBefore = pot.BaseScore + pot.FlavorScore;
         pot.Ingredients.Add(ingredient);
         ApplyIngredientTo(ingredient, pot, _gameState, effectSystem);
-        pot.TotalBaseScore += pot.BaseScore - scoreBefore;
+        pot.TotalBaseScore += (int)Math.Floor(pot.BaseScore + pot.FlavorScore - totalBefore);
     }
 
     /// <summary>

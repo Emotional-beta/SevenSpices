@@ -4,6 +4,7 @@ using SevenSpices.Tests.Content;
 using SevenSpices.Tests.Customers;
 using SevenSpices.Tests.Effects;
 using SevenSpices.Tests.Events;
+using SevenSpices.Tests.Flavors;
 using SevenSpices.Tests.Game;
 using SevenSpices.Tests.Ingredients;
 using SevenSpices.Tests.Items;
@@ -45,6 +46,7 @@ public static class TestRunner
         ItemInstanceTests.RunAll();
         ItemRegistryTests.RunAll();
         ScoreCalculatorTests.RunAll();
+        FlavorScoreTests.RunAll();
         BottomExtractorTests.RunAll();
         RunControllerTests.RunAll();
         FinalPotSettlementTests.RunAll();

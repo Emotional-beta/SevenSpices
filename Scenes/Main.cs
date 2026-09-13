@@ -33,6 +33,7 @@ public partial class Main : Node
     private Label _phaseLabel = null!;
     private Label _bowlLabel = null!;
     private Label _scoreLabel = null!;
+    private Label _flavorScoreLabel = null!;
     private Label _multiplierLabel = null!;
     private Label _finalScoreLabel = null!;
     private Label _totalScoreLabel = null!;
@@ -125,6 +126,8 @@ public partial class Main : Node
         vbox.AddChild(_bowlLabel);
         _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 28);
         vbox.AddChild(_scoreLabel);
+        _flavorScoreLabel = MakeLabel("味道分：0", center: true, minHeight: 28);
+        vbox.AddChild(_flavorScoreLabel);
         _multiplierLabel = MakeLabel("倍率：×1", center: true, minHeight: 28);
         vbox.AddChild(_multiplierLabel);
         _finalScoreLabel = MakeLabel("最终分数：0", center: true, minHeight: 28);
@@ -472,7 +475,8 @@ public partial class Main : Node
         _bowlLabel.Text = run.IsFinalPot
             ? "最终锅：可无限添加食材"
             : $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
-        _scoreLabel.Text = $"基础分：{pot.BaseScore}";
+        _scoreLabel.Text = $"基础分：{(int)Math.Floor(pot.BaseScoreWithFlavor)}";
+        _flavorScoreLabel.Text = $"味道分：{(int)Math.Floor(pot.FlavorScore)}";
         int multiplier = ScoreCalculator.GetMultiplier(pot.BowlNumber);
         _multiplierLabel.Text = $"倍率：×{multiplier}";
         _finalScoreLabel.Text = pot.IsScoreLocked
@@ -773,6 +777,8 @@ public partial class Main : Node
             ("辣", FlavorType.Spicy),
             ("酸", FlavorType.Sour),
             ("苦", FlavorType.Bitter),
+            ("咸", FlavorType.Salty),
+            ("麻", FlavorType.Numbing),
         ];
         var parts = System.Array.ConvertAll(flavors, f => $"{f.label} {pot.GetFlavor(f.type)}");
         return string.Join("   ", parts);
@@ -787,6 +793,8 @@ public partial class Main : Node
             ("辣", FlavorType.Spicy),
             ("酸", FlavorType.Sour),
             ("苦", FlavorType.Bitter),
+            ("咸", FlavorType.Salty),
+            ("麻", FlavorType.Numbing),
         ];
         var parts = System.Array.ConvertAll(flavors, f => $"{f.label}{bottom.GetFlavor(f.type)}");
         return string.Join("   ", parts);
@@ -845,6 +853,8 @@ public partial class Main : Node
         FlavorType.Spicy => "辣",
         FlavorType.Sour => "酸",
         FlavorType.Bitter => "苦",
+        FlavorType.Salty => "咸",
+        FlavorType.Numbing => "麻",
         _ => flavor.ToString()
     };
 

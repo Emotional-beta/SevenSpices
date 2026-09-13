@@ -6,5 +6,7 @@ public enum FlavorType
     Sweet,
     Bitter,
     Spicy,
-    Umami
+    Umami,
+    Salty,
+    Numbing
 }

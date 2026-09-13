@@ -145,11 +145,12 @@ public static class CompanionFlowTests
 
         // 选定后本碗会立刻结算并进入下一碗（BaseScore 被 StartBowl 归零），
         // 因此读取跨碗累计的 TotalBaseScore 来验证伙伴 E1 在下一锅真实生效。
+        // TotalBaseScore 含味道分，故再加上该食材自身的味道分（默认权重 1.0）。
         var first = gc.CurrentCandidates[0];
-        int expected = first.Definition.BaseScore + 1;
+        int expected = first.Definition.BaseScore + 1 + first.Definition.Flavors.Values.Sum();
         gc.SelectIngredient(first.InstanceId);
         Assert(gc.Pot.TotalBaseScore == expected,
-            $"第 2 锅首个食材应累计为基础分 + 1（{expected}），实际 {gc.Pot.TotalBaseScore}");
+            $"第 2 锅首个食材应累计为「基础分 + 1 + 味道分」（{expected}），实际 {gc.Pot.TotalBaseScore}");
     }
 
     /// <summary>6c. SkipCompanionChoice：不获得伙伴，同样解锁推进。</summary>
