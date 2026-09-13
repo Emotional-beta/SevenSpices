@@ -64,6 +64,16 @@ public class PotState
     /// <summary>咸·固化：本锅剩余时间内是否免疫削减 / 负面 / 物理改写（设计文档 §11.2）。</summary>
     public bool IsSolidified { get; set; }
 
+    /// <summary>
+    /// 锅内物理状态的通用容器（设计文档 §11.5 / 架构 §32.5）。
+    /// 随锅存活、随 <see cref="Reset"/> 清空、纳入 <c>PotStateSnapshot</c> 深拷贝。
+    /// 不为单个物理状态写死字段，新增状态只需加 ID 与判定数据。
+    /// </summary>
+    public PotStatusContainer Statuses { get; } = new();
+
+    /// <summary>臭是否已在本锅激活（物理状态容器的等价读取）。</summary>
+    public bool HasOdor => Statuses.Has(PotStatusIds.Odor);
+
     /// <summary>辣·余温：碗数倍率加成还剩多少碗（&gt;0 时生效，普通锅进入新碗时递减）。</summary>
     public int HeatBowlsRemaining { get; set; }
 
@@ -180,6 +190,7 @@ public class PotState
         AgingPool = 0.0;
         AgingAdds = 0;
         IsSolidified = false;
+        Statuses.Clear();
         HeatBowlsRemaining = 0;
         HeatBonusTiers = 0;
         UmamiMultiplier = 1.0;

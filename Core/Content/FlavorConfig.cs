@@ -63,6 +63,14 @@ public class FlavorConfig
     /// <summary>精·动词超频：动词效果增强的档位封顶（占位 3）。</summary>
     public int SpecializationMaxPotency { get; init; } = 3;
 
+    // ── F5：物理状态「臭」的触发阈值。所有数值为占位，待调。 ──
+
+    /// <summary>臭·触发：本锅「鲜 ≥ 该值」时满足触发条件之一（占位 3）。</summary>
+    public int OdorUmamiThreshold { get; init; } = 3;
+
+    /// <summary>臭·触发：本锅「苦 ≥ 该值」时满足触发条件之一（占位 3）。</summary>
+    public int OdorBitterThreshold { get; init; } = 3;
+
     /// <summary>全局默认配置，供 PotState 取默认权重与互动层取默认数值使用。</summary>
     public static FlavorConfig Default { get; } = new();
 }

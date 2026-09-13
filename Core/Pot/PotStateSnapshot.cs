@@ -35,6 +35,10 @@ internal sealed class PotStateSnapshot : PotState
         snap.HeatBonusTiers = source.HeatBonusTiers;
         snap.UmamiMultiplier = source.UmamiMultiplier;
 
+        // F5 物理状态容器：深拷贝，否则预览得到的臭 / 丰盛失效会与真实结算不一致。
+        foreach (var kv in source.Statuses.States)
+            snap.Statuses.Set(kv.Key, kv.Value);
+
         foreach (var kv in source.Flavors)
             snap.Flavors[kv.Key] = kv.Value;
 

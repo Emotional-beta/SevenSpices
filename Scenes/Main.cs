@@ -494,7 +494,8 @@ public partial class Main : Node
                 : $"当前食客：{customer.Definition.Name}";
         _goldLabel.Text = $"金币：{_controller.Player.Gold}";
 
-        _flavorLabel.Text = $"味道种类：{pot.ActiveFlavorTypeCount}｜{ToFlavorText(pot)}";
+        _flavorLabel.Text = $"味道种类：{pot.ActiveFlavorTypeCount}｜{ToFlavorText(pot)}"
+            + (pot.HasOdor ? "｜【臭】" : "");
         _bottomLabel.Text = $"锅底：{ToBottomText(_controller.State.Bottom)}";
 
         _poolCountLabel.Text = $"剩余食材池：{_controller.RemainingPoolCount}";

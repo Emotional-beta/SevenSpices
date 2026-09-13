@@ -69,6 +69,9 @@ public class FlavorInteractionSystem
         _resolving = true;
         try
         {
+            // 第 2 步：物理状态检查（如「臭」）。必须早于味道动词结算（设计文档 §11.1）。
+            FlavorStatusRules.CheckPhysicalStates(pot, config);
+
             // 遍历前快照：以「本次增加的味道集合」为准，不随动词对锅的改动而漂移。
             var increased = GetIncreasedFlavors(added);
 

@@ -73,6 +73,10 @@ public static class ScoreCalculator
     {
         ArgumentNullException.ThrowIfNull(pot);
 
+        // F5：臭激活时本锅味道熵奖励失效，丰盛倍率不生效（设计文档 §11.5）。
+        if (pot.HasOdor)
+            return 1.0;
+
         int typeCount = pot.ActiveFlavorTypeCount;
         if (typeCount < 2)
             return 1.0;

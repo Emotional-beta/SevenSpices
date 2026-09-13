@@ -299,6 +299,10 @@ public class PotController
 
         BottomExtractor.Extract(pot, _gameState.Bottom);
 
+        // F5：臭·现实转移 —— 在锅底提炼之后执行，只写 BottomState、不改 PotState。
+        // 咸·固化时跳过（免疫物理改写）；顺序暂定为「提炼 → 现实转移 → 伙伴 E2」。
+        FlavorStatusRules.ApplyOdorRealityTransfer(pot, _gameState.Bottom);
+
         // 伙伴扩展点 E2：提炼后允许伙伴修正锅底（只读 pot、只写 bottom）；无伙伴时不执行。
         _companions?.ApplyBottomSettlementHooks(pot, _gameState.Bottom);
     }
