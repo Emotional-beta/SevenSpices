@@ -1,4 +1,5 @@
 using SevenSpices.Core.Bottom;
+using SevenSpices.Core.Companions;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
@@ -15,9 +16,13 @@ public class PotController
 {
     private readonly GameState _gameState;
 
-    public PotController(GameState gameState)
+    /// <summary>伙伴系统（可选）：在固定时机调用伙伴扩展点。为 null 时行为与未持有伙伴完全一致。</summary>
+    private readonly CompanionSystem? _companions;
+
+    public PotController(GameState gameState, CompanionSystem? companions = null)
     {
         _gameState = gameState;
+        _companions = companions;
     }
 
     public GameState GameState => _gameState;
@@ -188,13 +193,17 @@ public class PotController
 
     /// <summary>
     /// 将食材的基础分、味道和效果链应用到目标 PotState（真实或快照）。
-    /// AddIngredient 和 PreviewIngredient 共享此方法，确保计算逻辑完全一致。
+    /// AddIngredient 和 PreviewIngredient 共享此方法，确保计算逻辑完全一致（含伙伴 E1 修正）。
     /// 调用方负责在调用前先将 ingredient 加入 pot.Ingredients（以便 UniqueCount 等效果能感知）。
     /// </summary>
-    private static void ApplyIngredientTo(
+    private void ApplyIngredientTo(
         IngredientInstance ingredient, PotState pot, GameState gameState, EffectSystem effectSystem)
     {
-        pot.BaseScore += ingredient.Definition.BaseScore;
+        // 伙伴扩展点 E1：只改基础分，不改其它状态；无伙伴时等价于原值。
+        int baseScore = _companions?.ModifyIngredientBaseScore(ingredient, ingredient.Definition.BaseScore)
+            ?? ingredient.Definition.BaseScore;
+
+        pot.BaseScore += baseScore;
         foreach (var (flavor, amount) in ingredient.Definition.Flavors)
             pot.AddFlavor(flavor, amount);
 
@@ -253,5 +262,8 @@ public class PotController
                 $"Cannot close pot: pot phase is {pot.Phase}, expected Ended.");
 
         BottomExtractor.Extract(pot, _gameState.Bottom);
+
+        // 伙伴扩展点 E2：提炼后允许伙伴修正锅底（只读 pot、只写 bottom）；无伙伴时不执行。
+        _companions?.ApplyBottomSettlementHooks(pot, _gameState.Bottom);
     }
 }

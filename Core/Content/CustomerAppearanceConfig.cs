@@ -41,12 +41,18 @@ public class CustomerAppearanceConfig
     /// <summary>普通食客 Definition。</summary>
     public CustomerDefinition NormalCustomer { get; init; } = CustomerData.NormalCustomer;
 
-    /// <summary>稀有食客 Definition。</summary>
-    public CustomerDefinition RareCustomer { get; init; } = CustomerData.RareCustomer;
+    /// <summary>
+    /// 稀有食客 Definition 池。命中稀有碗时从这里随机取一个。
+    /// 默认包含两个具名稀有食客（甜心老板 / 豪爽客），各自绑定伙伴。
+    /// 置为空列表表示本局不出现稀有食客（等价于 <see cref="RareBowlNumbers"/> 为空）。
+    /// </summary>
+    public IReadOnlyList<CustomerDefinition> RareCustomers { get; init; } =
+        new[] { CustomerData.SweetBossCustomer, CustomerData.GenerousGuestCustomer };
 
     /// <summary>
     /// 为指定碗创建食客实例：碗数命中 <see cref="RareBowlNumbers"/>
-    /// 且随机值小于 <see cref="RareProbability"/> 时返回稀有实例，否则返回普通实例。
+    /// 且随机值小于 <see cref="RareProbability"/> 时，从 <see cref="RareCustomers"/> 随机取一个返回；
+    /// 否则（含稀有池为空）返回普通实例。
     /// </summary>
     public CustomerInstance CreateCustomerForBowl(int bowlNumber, Random random)
     {
@@ -55,7 +61,12 @@ public class CustomerAppearanceConfig
         // RareBowlNumbers 为 null 时按空集合处理，视为「本局不出现稀有食客」。
         bool rareBowl = RareBowlNumbers?.Contains(bowlNumber) == true;
         if (rareBowl && random.NextDouble() < RareProbability)
-            return new CustomerInstance(RareCustomer);
+        {
+            var pool = RareCustomers;
+            // 稀有池为空时回退普通食客，保证不会产生 null 食客。
+            if (pool != null && pool.Count > 0)
+                return new CustomerInstance(pool[random.Next(pool.Count)]);
+        }
 
         return new CustomerInstance(NormalCustomer);
     }

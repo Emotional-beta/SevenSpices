@@ -45,6 +45,11 @@ public static class RunProgressionTests
         // 普通锅结束会有 X 选 1 奖励且门控「进入下一锅」，辅助方法代选第一个以便继续推进。
         if (gc.IsAwaitingReward)
             gc.ChooseReward(gc.RewardCandidates[0].InstanceId);
+
+        // 默认配置下第 5/7 碗可能出现绑定了伙伴的具名稀有食客，满意后产生伙伴候选；
+        // 本辅助跳过选择，避免伙伴效果改变锅底断言。
+        if (gc.IsAwaitingCompanionChoice)
+            gc.SkipCompanionChoice();
     }
 
     /// <summary>用固定数量的糖填满食材篮，使本锅甜味确定性累积。</summary>

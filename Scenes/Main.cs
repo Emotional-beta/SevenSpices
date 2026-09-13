@@ -1,4 +1,5 @@
 using Godot;
+using SevenSpices.Core.Companions;
 using SevenSpices.Core.Effects;
 using SevenSpices.Core.Events;
 using SevenSpices.Core.Game;
@@ -18,6 +19,10 @@ public partial class Main : Node
     private HBoxContainer _rewardRow = null!;
     private Label _itemCountLabel = null!;
     private HBoxContainer _itemRow = null!;
+    private VBoxContainer _companionSection = null!;
+    private HBoxContainer _companionCandidateRow = null!;
+    private Button _skipCompanionButton = null!;
+    private VBoxContainer _ownedCompanionList = null!;
 
     private Label _chapterLabel = null!;
     private Label _potLabel = null!;
@@ -177,6 +182,31 @@ public partial class Main : Node
         _rewardRow.CustomMinimumSize = new Vector2(0, 40);
         _rewardSection.AddChild(_rewardRow);
 
+        // 普通锅结束后的伙伴候选区域（仅等待选择时显示）
+        _companionSection = new VBoxContainer();
+        _companionSection.AddThemeConstantOverride("separation", 8);
+        _companionSection.Visible = false;
+        vbox.AddChild(_companionSection);
+
+        _companionSection.AddChild(MakeLabel("伙伴候选：选择 1 位伙伴", center: true, minHeight: 28));
+
+        _companionCandidateRow = new HBoxContainer();
+        _companionCandidateRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _companionCandidateRow.AddThemeConstantOverride("separation", 15);
+        _companionSection.AddChild(_companionCandidateRow);
+
+        _skipCompanionButton = new Button();
+        _skipCompanionButton.Text = "跳过伙伴选择";
+        _skipCompanionButton.CustomMinimumSize = new Vector2(180, 36);
+        _skipCompanionButton.Pressed += OnSkipCompanionPressed;
+        _companionSection.AddChild(_skipCompanionButton);
+
+        // 已有伙伴（长期资源，只读展示）
+        vbox.AddChild(MakeLabel("已有伙伴", center: true, minHeight: 28));
+        _ownedCompanionList = new VBoxContainer();
+        _ownedCompanionList.AddThemeConstantOverride("separation", 4);
+        vbox.AddChild(_ownedCompanionList);
+
         // 普通锅结束后的跨锅推进入口
         _nextPotButton = new Button();
         _nextPotButton.Text = "进入下一锅";
@@ -324,6 +354,24 @@ public partial class Main : Node
         _controller.ChooseReward(candidate.InstanceId);
     }
 
+    /// <summary>伙伴候选选择：只转发 GameController.ChooseCompanion，随后刷新。</summary>
+    private void OnCompanionPressed(CompanionDefinition candidate)
+    {
+        if (!_controller.CanChooseCompanion)
+            return;
+
+        _controller.ChooseCompanion(candidate.Id);
+    }
+
+    /// <summary>跳过伙伴选择：只转发 GameController.SkipCompanionChoice。</summary>
+    private void OnSkipCompanionPressed()
+    {
+        if (!_controller.CanSkipCompanionChoice)
+            return;
+
+        _controller.SkipCompanionChoice();
+    }
+
     private void OnSkipBowlPressed()
     {
         if (!_controller.CanSkipBowl)
@@ -394,6 +442,7 @@ public partial class Main : Node
         RebuildCandidateButtons();
         RebuildRewardSection();
         RebuildItemSection();
+        RebuildCompanionSection();
 
         bool runComplete = _controller.IsRunComplete;
         _skipBowlButton.Disabled = runComplete || !_controller.CanSkipBowl;
@@ -457,6 +506,67 @@ public partial class Main : Node
             btn.MouseEntered += () => OnRewardHover(captured);
             btn.MouseExited += HideTooltip;
             _rewardRow.AddChild(btn);
+        }
+    }
+
+    /// <summary>
+    /// 按当前伙伴候选 / 已有伙伴重建伙伴区域。
+    /// 表现层只读 CompanionCandidates 与 Player.Companions，点击回调 GameController，不参与流程判断。
+    /// </summary>
+    private void RebuildCompanionSection()
+    {
+        bool awaiting = _controller.IsAwaitingCompanionChoice;
+        _companionSection.Visible = awaiting;
+
+        foreach (Node child in _companionCandidateRow.GetChildren())
+        {
+            _companionCandidateRow.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        if (awaiting)
+        {
+            foreach (var candidate in _controller.CompanionCandidates)
+            {
+                var captured = candidate;
+
+                var column = new VBoxContainer();
+                column.AddThemeConstantOverride("separation", 4);
+
+                var info = MakeLabel($"{captured.Name}：{captured.Description}", center: true);
+                info.CustomMinimumSize = new Vector2(240, 0);
+                column.AddChild(info);
+
+                var btn = new Button();
+                btn.Text = "选择";
+                btn.CustomMinimumSize = new Vector2(80, 32);
+                btn.Pressed += () => OnCompanionPressed(captured);
+                column.AddChild(btn);
+
+                _companionCandidateRow.AddChild(column);
+            }
+        }
+
+        _skipCompanionButton.Disabled = !awaiting;
+
+        foreach (Node child in _ownedCompanionList.GetChildren())
+        {
+            _ownedCompanionList.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        if (_controller.Player.Companions.Count == 0)
+        {
+            _ownedCompanionList.AddChild(MakeLabel("（暂无）", center: true, minHeight: 24));
+        }
+        else
+        {
+            foreach (var companion in _controller.Player.Companions)
+            {
+                _ownedCompanionList.AddChild(MakeLabel(
+                    $"{companion.Definition.Name}：{companion.Definition.Description}",
+                    center: true, minHeight: 24));
+            }
         }
     }
 

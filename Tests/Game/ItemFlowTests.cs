@@ -275,7 +275,13 @@ public static class ItemFlowTests
     {
         var gc = new GameController(
             new GameState(),
-            new CustomerAppearanceConfig { RareBowlNumbers = new[] { 1 }, RareProbability = 1.0 },
+            new CustomerAppearanceConfig
+            {
+                RareBowlNumbers = new[] { 1 },
+                RareProbability = 1.0,
+                // 显式使用通用稀有食客，本测试用 7 个食盐垫高分数触发满意。
+                RareCustomers = new[] { CustomerData.RareCustomer },
+            },
             new Random(2002));
         gc.StartNewGame();
 
@@ -385,7 +391,9 @@ public static class ItemFlowTests
         var appearance = new CustomerAppearanceConfig
         {
             RareBowlNumbers = new[] { 1 },
-            RareProbability = 1.0
+            RareProbability = 1.0,
+            // 显式使用通用稀有食客（分数 ≥20 或甜味 ≥5）；本辅助用食盐垫高分数触发满意。
+            RareCustomers = new[] { CustomerData.RareCustomer },
         };
         var gc = new GameController(state, appearance, new Random(seed));
         gc.StartNewGame();

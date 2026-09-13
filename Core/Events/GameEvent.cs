@@ -1,3 +1,4 @@
+using SevenSpices.Core.Companions;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
@@ -179,7 +180,14 @@ public sealed class RunCompletedEvent : GameEvent
 {
 }
 
-// TODO（架构 §22 事件系统 / §21 伙伴系统）：CompanionAdded 将随伙伴系统
-// （CompanionDefinition / CompanionInstance / CompanionSystem）一并引入；
-// 本阶段不添加无发布者的空事件，避免出现死事件。
+/// <summary>玩家获得一位伙伴（已加入 PlayerState.Companions）。</summary>
+public sealed class CompanionAddedEvent : GameEvent
+{
+    public CompanionInstance Companion { get; }
+
+    public CompanionAddedEvent(CompanionInstance companion)
+    {
+        Companion = companion ?? throw new ArgumentNullException(nameof(companion));
+    }
+}
 

@@ -57,6 +57,10 @@ public static class GameControllerTests
         // 普通锅结束会有 X 选 1 奖励且门控「进入下一锅」，辅助方法代选第一个以便继续推进。
         if (gc.IsAwaitingReward)
             gc.ChooseReward(gc.RewardCandidates[0].InstanceId);
+
+        // 默认配置下的稀有碗可能产生伙伴候选；本辅助跳过，避免引入伙伴效果干扰断言。
+        if (gc.IsAwaitingCompanionChoice)
+            gc.SkipCompanionChoice();
     }
 
     /// <summary>推进 RunController 走完全部9锅普通锅（空锅），进入 Final Pot。</summary>

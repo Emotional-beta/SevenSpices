@@ -1,3 +1,4 @@
+using SevenSpices.Core.Companions;
 using SevenSpices.Core.Ingredients;
 using SevenSpices.Core.Items;
 
@@ -18,6 +19,6 @@ public class PlayerState
     /// <summary>玩家当前持有的道具实例。</summary>
     public List<ItemInstance> Items { get; } = new();
 
-    /// <summary>伙伴槽位（Phase 2 填充）。</summary>
-    public List<string> Companions { get; } = new();
+    /// <summary>玩家持有的伙伴实例（长期资源，跨碗/跨锅保留）。</summary>
+    public List<CompanionInstance> Companions { get; } = new();
 }

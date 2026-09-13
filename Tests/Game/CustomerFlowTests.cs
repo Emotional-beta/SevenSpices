@@ -156,7 +156,7 @@ public static class CustomerFlowTests
         {
             RareBowlNumbers = new[] { 1 },
             RareProbability = 1.0,
-            RareCustomer = MakeRareDefinition(scoreThreshold: 1), // 极易满足
+            RareCustomers = new[] { MakeRareDefinition(scoreThreshold: 1) }, // 极易满足
         };
         var gc = new GameController(appearance: config, random: new Random(4));
         gc.StartNewGame();
@@ -193,7 +193,7 @@ public static class CustomerFlowTests
         {
             RareBowlNumbers = new[] { 1 },
             RareProbability = 1.0,
-            RareCustomer = MakeRareDefinition(scoreThreshold: 9999), // 不可能满足
+            RareCustomers = new[] { MakeRareDefinition(scoreThreshold: 9999) }, // 不可能满足
         };
         var gc = new GameController(appearance: config, random: new Random(5));
         gc.StartNewGame();
@@ -218,7 +218,7 @@ public static class CustomerFlowTests
         {
             RareBowlNumbers = new[] { 1 },
             RareProbability = 1.0,
-            RareCustomer = MakeRareDefinition(scoreThreshold: 1), // 第 1 碗极易满足
+            RareCustomers = new[] { MakeRareDefinition(scoreThreshold: 1) }, // 第 1 碗极易满足
         };
         var gc = new GameController(appearance: config, random: new Random(6));
         gc.StartNewGame();

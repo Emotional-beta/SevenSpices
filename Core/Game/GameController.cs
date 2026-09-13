@@ -1,3 +1,4 @@
+using SevenSpices.Core.Companions;
 using SevenSpices.Core.Content;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Effects;
@@ -29,11 +30,14 @@ public class GameController
     private readonly CustomerAppearanceConfig _appearance;
     private readonly PotRewardConfig _potReward;
     private readonly Random _random;
+    private readonly CompanionSystem _companions;
     private PotController? _potController;
     private IngredientPool? _pool;
     private readonly List<IngredientInstance> _candidates = new();
     private readonly List<IngredientInstance> _rewardCandidates = new();
     private bool _rewardResolved;
+    private readonly List<CompanionDefinition> _companionCandidates = new();
+    private bool _companionResolved;
 
     /// <param name="state">可注入已有 GameState（测试 / 存档恢复用）；为空则新建。</param>
     /// <param name="appearance">食客出现机制配置；为空则使用默认配置。</param>
@@ -46,7 +50,9 @@ public class GameController
         PotRewardConfig? potReward = null)
     {
         _state = state ?? new GameState();
-        _runController = new RunController(_state);
+        // 伙伴系统复用 PlayerState.Companions 的同一列表，不另存副本；须在 RunController 之前建立。
+        _companions = new CompanionSystem(_state.Player.Companions);
+        _runController = new RunController(_state, _companions);
         _events = new EventBus();
         _effectSystem = new EffectSystem(_events);
         _appearance = appearance ?? new CustomerAppearanceConfig();
@@ -74,19 +80,20 @@ public class GameController
     public bool IsFinalPot => _state.Run.IsFinalPot;
 
     /// <summary>
-    /// 是否允许推进到下一锅：当前普通锅已 Ended，且锅结束奖励已处理
-    /// （已选定，或本锅本就未产生候选）。
+    /// 是否允许推进到下一锅：当前普通锅已 Ended，且锅结束奖励与伙伴候选均已处理
+    /// （已选定/跳过，或本锅本就未产生候选）。
     /// 最终锅只能通过 <see cref="EndCooking"/> 结束整局，不能推进。
     /// <para>
-    /// 防御存档恢复：构造函数声明可注入已有 GameState（存档恢复用），此时奖励态字段
-    /// （_rewardResolved / _rewardCandidates）为默认值。若该锅结束时未产生候选，
-    /// 仅靠 _rewardResolved 会在恢复后卡死；追加「无候选即放行」可避免这种双 false 软锁。
+    /// 防御存档恢复：构造函数声明可注入已有 GameState（存档恢复用），此时奖励态与伙伴态字段
+    /// 为默认值。若对应环节未产生候选，仅靠 resolved 标志会在恢复后卡死；
+    /// 追加「无候选即放行」可避免这种双 false 软锁。
     /// </para>
     /// </summary>
     public bool CanAdvanceToNextPot =>
         _state.Pot.Phase == PotPhase.Ended
         && !_state.Run.IsFinalPot
-        && (_rewardResolved || _rewardCandidates.Count == 0);
+        && (_rewardResolved || _rewardCandidates.Count == 0)
+        && (_companionResolved || _companionCandidates.Count == 0);
 
     /// <summary>普通锅结束时的 X 选 1 奖励候选（未进入奖励态时为空）。只读。</summary>
     public IReadOnlyList<IngredientInstance> RewardCandidates => _rewardCandidates;
@@ -105,6 +112,27 @@ public class GameController
 
     /// <summary>锅结束奖励的候选数量 X，供 UI 文案使用。</summary>
     public int RewardChoiceCount => _potReward.ChoiceCount;
+
+    /// <summary>
+    /// 普通锅结束时的伙伴候选：本锅满意的稀有食客中，有 <see cref="CustomerDefinition.CompanionReward"/>
+    /// 的去重映射（保持满意顺序）。未进入候选态时为空。只读。
+    /// </summary>
+    public IReadOnlyList<CompanionDefinition> CompanionCandidates => _companionCandidates;
+
+    /// <summary>
+    /// 是否正在等待玩家选择伙伴：普通锅、锅已 Ended、尚未处理（选定/跳过）、且有候选。
+    /// </summary>
+    public bool IsAwaitingCompanionChoice =>
+        !_state.Run.IsFinalPot
+        && _state.Pot.Phase == PotPhase.Ended
+        && !_companionResolved
+        && _companionCandidates.Count > 0;
+
+    /// <summary>兼容别名：语义等同 <see cref="IsAwaitingCompanionChoice"/>，供表现层按钮守卫使用。</summary>
+    public bool CanChooseCompanion => IsAwaitingCompanionChoice;
+
+    /// <summary>是否允许跳过伙伴选择：等待选择时可跳过（候选仍会保留到 resolved 由流程处理）。</summary>
+    public bool CanSkipCompanionChoice => IsAwaitingCompanionChoice;
 
     /// <summary>整局是否已完成：最终锅已结束。委托领域层，语义等价。最终锅结算前恒为 false。</summary>
     public bool IsRunComplete => _runController.IsRunComplete;
@@ -217,6 +245,10 @@ public class GameController
         _rewardCandidates.Clear();
         _rewardResolved = false;
 
+        // 伙伴候选状态同样按「本锅」重置。
+        _companionCandidates.Clear();
+        _companionResolved = false;
+
         // 最终锅不逐碗指派食客：整锅由 EndCooking 用占位食客一次性结算。
         if (!_state.Run.IsFinalPot)
             AssignCustomerForBowl();
@@ -300,6 +332,42 @@ public class GameController
     }
 
     /// <summary>
+    /// 选定一位伙伴：加入 <see cref="PlayerState.Companions"/>（CompanionSystem 复用同一列表，
+    /// 立即对后续食材 / 锅底生效），清空候选并标记已处理，随后才允许推进下一锅。
+    /// 发布 <see cref="CompanionAddedEvent"/>。只能在 <see cref="CanChooseCompanion"/> 为真时调用。
+    /// </summary>
+    public void ChooseCompanion(string companionId)
+    {
+        if (!CanChooseCompanion)
+            throw new InvalidOperationException(
+                $"Cannot choose companion: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, resolved={_companionResolved}, candidates={_companionCandidates.Count}.");
+
+        var definition = _companionCandidates.FirstOrDefault(c => c.Id == companionId)
+            ?? throw new ArgumentException($"Companion candidate '{companionId}' not found.", nameof(companionId));
+
+        var instance = new CompanionInstance(definition);
+        _state.Player.Companions.Add(instance);
+        _companionCandidates.Clear();
+        _companionResolved = true;
+
+        _events.Publish(new CompanionAddedEvent(instance));
+    }
+
+    /// <summary>
+    /// 跳过伙伴选择：清空候选并标记已处理，随后允许推进下一锅，不获得任何伙伴。
+    /// 只能在 <see cref="CanSkipCompanionChoice"/> 为真时调用。
+    /// </summary>
+    public void SkipCompanionChoice()
+    {
+        if (!CanSkipCompanionChoice)
+            throw new InvalidOperationException(
+                $"Cannot skip companion choice: pot={_state.Pot.Phase}, final={_state.Run.IsFinalPot}, resolved={_companionResolved}, candidates={_companionCandidates.Count}.");
+
+        _companionCandidates.Clear();
+        _companionResolved = true;
+    }
+
+    /// <summary>
     /// 预测将候选实例投入当前碗后的本碗基础分，不修改任何真实状态。
     /// 可在 IngredientSelection 阶段（悬停候选时）调用。
     /// </summary>
@@ -322,6 +390,8 @@ public class GameController
         _pool = null;
         _rewardCandidates.Clear();
         _rewardResolved = false;
+        _companionCandidates.Clear();
+        _companionResolved = false;
 
         // 最终锅由 RunController 内部一次性结算；此处只读取已结算的状态发布事件。
         var pot = _state.Pot;
@@ -414,6 +484,22 @@ public class GameController
             if (_rewardCandidates.Count == 0)
                 _rewardResolved = true;
 
+            // 伙伴候选（设计文档 §3.3 / §21）：本锅满意的稀有食客中，有 CompanionReward 的
+            // 映射为伙伴定义，按满意顺序去重。此分支只在普通锅走到（最终锅不经 FinishBowl），
+            // 天然不触发最终锅候选。
+            _companionCandidates.Clear();
+            foreach (var customer in _state.Customer.SatisfiedRareCustomers)
+            {
+                var companionReward = customer.Definition.CompanionReward;
+                if (companionReward == null || _companionCandidates.Contains(companionReward))
+                    continue;
+                _companionCandidates.Add(companionReward);
+            }
+
+            // 无候选时直接视为已处理，避免卡住推进（与奖励兜底同理）。
+            if (_companionCandidates.Count == 0)
+                _companionResolved = true;
+
             _events.Publish(new RewardOfferedEvent(_rewardCandidates));
         }
     }
@@ -498,5 +584,5 @@ public class GameController
     /// （测试 / 存档恢复），则基于同一状态惰性创建，不再重复 StartPot。
     /// </summary>
     private PotController EnsurePotController()
-        => _potController ??= new PotController(_state);
+        => _potController ??= new PotController(_state, _companions);
 }

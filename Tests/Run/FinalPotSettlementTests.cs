@@ -1,3 +1,4 @@
+using SevenSpices.Core.Companions;
 using SevenSpices.Core.Content;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Effects;
@@ -36,6 +37,7 @@ public static class FinalPotSettlementTests
         Test_FinalPot_BaseScore_AccumulatesAcrossStartBowl();
         Test_FinalPot_StartNextBowl_Throws();
         Test_FinalPot_EndCooking_WhenScoreAlreadyLocked_LeavesPotInProgress();
+        Test_EndCooking_AppliesBottomSettlementHook_E2();
 
         Console.WriteLine("All FinalPotSettlementTests passed.");
     }
@@ -43,9 +45,9 @@ public static class FinalPotSettlementTests
     // ── 辅助 ─────────────────────────────────────────────────────────────────
 
     /// <summary>推进 Run 经过全部9锅普通锅，返回处于 IsFinalPot=true 状态的 RunController。</summary>
-    static RunController MakeRunAtFinalPot(GameState state)
+    static RunController MakeRunAtFinalPot(GameState state, CompanionSystem? companions = null)
     {
-        var run = new RunController(state);
+        var run = new RunController(state, companions);
         run.StartRun();
         int total = RunController.ChaptersPerRun * RunController.PotsPerChapter;
         for (int i = 0; i < total; i++)
@@ -235,6 +237,28 @@ public static class FinalPotSettlementTests
         // 30% of 10 = 3
         Assert(state.Bottom.GetFlavor(FlavorType.Sweet) == 3,
             "EndCooking 后锅底 Sweet 应为 3（10×30%）");
+    }
+
+    /// <summary>
+    /// 最终锅整链 RunController.EndCooking → ClosePot → E2：
+    /// 装备「甜心老板」后，锅底提炼结果（甜 10 → 3）再被 E2 提升最高味道 +2 → 5。
+    /// </summary>
+    static void Test_EndCooking_AppliesBottomSettlementHook_E2()
+    {
+        var state = new GameState();
+        // CompanionSystem 复用 PlayerState.Companions 的同一列表，先装备再建 RunController。
+        var companions = new CompanionSystem(state.Player.Companions);
+        state.Player.Companions.Add(new CompanionInstance(CompanionData.SweetBossCompanion));
+
+        var run = MakeRunAtFinalPot(state, companions);
+        run.StartCurrentPot();
+
+        state.Pot.AddFlavor(FlavorType.Sweet, 10);
+
+        run.EndCooking(MakeNormalCustomer());
+
+        Assert(state.Bottom.GetFlavor(FlavorType.Sweet) == 5,
+            $"甜心老板 E2 应把最终锅锅底最高味道 3 提升到 5，实际 {state.Bottom.GetFlavor(FlavorType.Sweet)}");
     }
 
     /// <summary>EndCooking 后 IsRunComplete 为 true。</summary>

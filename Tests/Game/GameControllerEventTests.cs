@@ -228,7 +228,9 @@ public static class GameControllerEventTests
         var appearance = new CustomerAppearanceConfig
         {
             RareBowlNumbers = new[] { 1 },
-            RareProbability = 1.0
+            RareProbability = 1.0,
+            // 显式使用通用稀有食客（分数 ≥20 或甜味 ≥5），本测试用 7 个食盐垫高分数触发满意。
+            RareCustomers = new[] { CustomerData.RareCustomer },
         };
         var gc = new GameController(new GameState(), appearance, new Random(3007));
         gc.StartNewGame();

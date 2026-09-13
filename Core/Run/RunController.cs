@@ -1,3 +1,4 @@
+using SevenSpices.Core.Companions;
 using SevenSpices.Core.Customers;
 using SevenSpices.Core.Game;
 using SevenSpices.Core.Ingredients;
@@ -21,11 +22,13 @@ public class RunController
     public const int PotsPerChapter = 3;
 
     private readonly GameState _gameState;
+    private readonly CompanionSystem? _companions;
 
-    public RunController(GameState gameState)
+    public RunController(GameState gameState, CompanionSystem? companions = null)
     {
         ArgumentNullException.ThrowIfNull(gameState);
         _gameState = gameState;
+        _companions = companions;
     }
 
     public GameState GameState => _gameState;
@@ -62,7 +65,7 @@ public class RunController
         var run = _gameState.Run;
         int bowlLimit = run.IsFinalPot ? int.MaxValue : 10;
         _gameState.Pot.Reset(bowlLimit);
-        var ctrl = new PotController(_gameState);
+        var ctrl = new PotController(_gameState, _companions);
         ctrl.StartPot();
         return ctrl;
     }
@@ -133,7 +136,7 @@ public class RunController
         // 同时 SatisfactionEvaluator 读的就是 FinalScore，算分必须发生在 EvaluateAndReward 之前。
         ScoreCalculator.CalculateAndLock(pot);
 
-        var ctrl = new PotController(_gameState);
+        var ctrl = new PotController(_gameState, _companions);
         ctrl.EndPot();
 
         CustomerService.AssignCustomer(_gameState.Customer, customer);

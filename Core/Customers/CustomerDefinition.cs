@@ -1,3 +1,5 @@
+using SevenSpices.Core.Companions;
+
 namespace SevenSpices.Core.Customers;
 
 /// <summary>
@@ -17,11 +19,18 @@ public class CustomerDefinition
     /// </summary>
     public IReadOnlyList<CustomerSatisfactionCondition> SatisfactionConditions { get; }
 
+    /// <summary>
+    /// 稀有食客满意后可伙伴化的定义（进入本锅结束后的伙伴候选）。
+    /// 为 null 表示该食客不提供伙伴（如通用稀有食客、普通食客）。
+    /// </summary>
+    public CompanionDefinition? CompanionReward { get; }
+
     public CustomerDefinition(
         string id,
         string name,
         bool isRare = false,
-        IEnumerable<CustomerSatisfactionCondition>? satisfactionConditions = null)
+        IEnumerable<CustomerSatisfactionCondition>? satisfactionConditions = null,
+        CompanionDefinition? companionReward = null)
     {
         if (string.IsNullOrWhiteSpace(id))
             throw new ArgumentException("CustomerDefinition Id cannot be empty.", nameof(id));
@@ -33,5 +42,6 @@ public class CustomerDefinition
         IsRare = isRare;
         SatisfactionConditions = satisfactionConditions?.ToList().AsReadOnly()
             ?? new List<CustomerSatisfactionCondition>().AsReadOnly();
+        CompanionReward = companionReward;
     }
 }
