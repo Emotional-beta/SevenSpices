@@ -22,6 +22,7 @@ public partial class Main : Node
     private const int FlavorBarSegments = 5;
     private const string DetailOpenText = "详情 ▾";
     private const string DetailClosedText = "详情 ▸";
+    private const string ProfessionConfirmText = "确认重开？";
 
     private static readonly (string Name, FlavorType Type)[] FlavorRows =
     [
@@ -100,6 +101,16 @@ public partial class Main : Node
     private Button _loadButton = null!;
     private Label _saveFeedbackLabel = null!;
 
+    // 主体滚动容器与「自动定位」状态：仅当最需要操作的区块发生变化时滚动一次，
+    // 避免每次 RefreshUI 都覆盖玩家手动滚动的位置。
+    private ScrollContainer _scroll = null!;
+    private Control? _pendingScrollTarget;
+    private Control? _lastScrollTarget;
+
+    // 职业重开二次确认：记录当前待确认的职业 Id 与其按钮，避免误点立刻丢进度。
+    private string? _pendingProfessionId;
+    private readonly System.Collections.Generic.List<(string Id, Button Button, string Name)> _professionButtons = new();
+
     // 事件驱动刷新：任一游戏事件置脏，下一帧统一 RefreshUI。
     private bool _uiDirty;
 
@@ -133,6 +144,13 @@ public partial class Main : Node
     private void OnGameEvent(GameEvent gameEvent)
     {
         _uiDirty = true;
+
+        // 任何真实的游戏状态变化都取消「职业重开」的待确认态，避免旧的确认残留造成误重开。
+        if (_pendingProfessionId != null)
+        {
+            _pendingProfessionId = null;
+            UpdateProfessionButtons();
+        }
     }
 
     private void BuildUI()
@@ -195,137 +213,22 @@ public partial class Main : Node
 
         // 操作区放入纵向滚动容器，避免区块超出窗口高度后底部按钮被裁剪到屏幕外。
         // 各行动态按钮改用 HFlowContainer 自动换行，故横向滚动保持 Disabled 即可。
-        var scroll = new ScrollContainer();
-        scroll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
-        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
-        rootCol.AddChild(scroll);
+        _scroll = new ScrollContainer();
+        _scroll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        _scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        rootCol.AddChild(_scroll);
 
         var vbox = new VBoxContainer();
         vbox.AddThemeConstantOverride("separation", UiMetrics.Gap);
         vbox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        scroll.AddChild(vbox);
+        _scroll.AddChild(vbox);
 
-        vbox.AddChild(MakeLabel("七荤八素", center: true, minHeight: 32, variation: "LabelTitle"));
+        // 主体区块按「当前需操作 → 锅末流程 → 信息 → 档位与元操作」排序（见《界面风格规范》§六）：
+        // 让本碗主操作（选食材 / 道具 / 推进）落在首屏，不必先滚动。
+        // 原顶部大标题「七荤八素」已移除：常驻 HUD 已提供顶部锚点，避免挤占首屏高度。
 
-        // ── 存档 / 读档（随时可用，读档会从当前锅开头重新开始）─────────────────
-        var savePanel = MakePanel("PanelCard");
-        vbox.AddChild(savePanel);
-        var saveCol = MakeColumn(UiMetrics.Gap);
-        savePanel.AddChild(saveCol);
-
-        var saveRow = new HBoxContainer();
-        saveRow.Alignment = BoxContainer.AlignmentMode.Center;
-        saveRow.AddThemeConstantOverride("separation", UiMetrics.Gap);
-        saveCol.AddChild(saveRow);
-
-        _saveButton = new Button();
-        _saveButton.Text = "存档";
-        _saveButton.CustomMinimumSize = new Vector2(112, 32);
-        _saveButton.Pressed += OnSavePressed;
-        saveRow.AddChild(_saveButton);
-
-        _loadButton = new Button();
-        _loadButton.Text = "读档";
-        _loadButton.CustomMinimumSize = new Vector2(112, 32);
-        _loadButton.Pressed += OnLoadPressed;
-        saveRow.AddChild(_loadButton);
-
-        _saveFeedbackLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
-        _saveFeedbackLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        saveCol.AddChild(_saveFeedbackLabel);
-
-        // ── 职业选择（7 个职业按钮在窄屏下自动换行）───────────────────────────
-        var professionPanel = MakePanel("PanelPlate");
-        vbox.AddChild(professionPanel);
-        var professionCol = MakeColumn(UiMetrics.Gap);
-        professionPanel.AddChild(professionCol);
-
-        _professionLabel = MakeLabel("职业：--", center: true, minHeight: 24, variation: "LabelDim");
-        professionCol.AddChild(_professionLabel);
-
-        _professionRow = MakeFlowRow();
-        professionCol.AddChild(_professionRow);
-
-        foreach (var profession in ProfessionConfig.All)
-        {
-            var captured = profession;
-            var professionButton = new Button();
-            professionButton.Text = captured.Name;
-            professionButton.CustomMinimumSize = new Vector2(112, 32);
-            professionButton.TooltipText = captured.Description;
-            professionButton.Pressed += () => OnProfessionPressed(captured.Id);
-            _professionRow.AddChild(professionButton);
-        }
-
-        // ── 局面信息 ──────────────────────────────────────────────────────────
-        var infoPanel = MakePanel("PanelPlate");
-        vbox.AddChild(infoPanel);
-        var infoCol = MakeColumn(UiMetrics.Gap);
-        infoPanel.AddChild(infoCol);
-
-        // 章 / 锅 / 碗数 / 阶段与「分数 + 倍率」已上移到常驻 HUD（见 BuildHud），此处只留分数明细。
-        _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 24);
-        infoCol.AddChild(_scoreLabel);
-        _flavorScoreLabel = MakeLabel("味道分：0", center: true, minHeight: 24);
-        infoCol.AddChild(_flavorScoreLabel);
-        _finalScoreLabel = MakeLabel("最终分数：0", center: true, minHeight: 24);
-        infoCol.AddChild(_finalScoreLabel);
-        _totalScoreLabel = MakeLabel("本锅累计基础分：0", center: true, minHeight: 24);
-        infoCol.AddChild(_totalScoreLabel);
-        _customerLabel = MakeLabel("当前食客：--", center: true, minHeight: 24, variation: "LabelDim");
-        infoCol.AddChild(_customerLabel);
-
-        // 饕餮试吃区：仅当前食客是饕餮时显示，文案/台词全部取自 BossConfig。
-        _bossLabel = MakeLabel("饕餮：--", center: true, minHeight: 24);
-        _bossLabel.Visible = false;
-        infoCol.AddChild(_bossLabel);
-
-        _bossLineLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
-        _bossLineLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _bossLineLabel.Visible = false;
-        infoCol.AddChild(_bossLineLabel);
-
-        // 最近一次试吃判定（章末 Boss / 最终锅真身共用），无记录时隐藏。
-        _bossVerdictLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
-        _bossVerdictLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _bossVerdictLabel.Visible = false;
-        infoCol.AddChild(_bossVerdictLabel);
-
-        // 本局终止 / 终局文案：放在信息区靠上位置，避免被长滚动区裁到视口外。
-        _runEndLabel = MakeLabel(string.Empty, center: true, minHeight: 56);
-        _runEndLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _runEndLabel.Visible = false;
-        infoCol.AddChild(_runEndLabel);
-
-        // 本局结束后的重开入口：仅在 IsRunComplete 时可见 / 可点。
-        _restartButton = new Button();
-        _restartButton.Text = "重新开始（投胎重来）";
-        _restartButton.CustomMinimumSize = new Vector2(224, 32);
-        _restartButton.Visible = false;
-        _restartButton.Pressed += OnRestartPressed;
-        infoCol.AddChild(_restartButton);
-
-        _goldLabel = MakeLabel("金币：0", center: true, minHeight: 24);
-        infoCol.AddChild(_goldLabel);
-
-        // 七味条已上移常驻 HUD；味道种类 / 陈酿 / 固化 / 臭 / 锅底已移入详情抽屉（见 BuildUI 顶部）。
-
-        // ── 道具 ──────────────────────────────────────────────────────────────
-        var itemPanel = MakePanel("PanelCard");
-        vbox.AddChild(itemPanel);
-        var itemCol = MakeColumn(UiMetrics.Gap);
-        itemPanel.AddChild(itemCol);
-
-        itemCol.AddChild(MakeLabel("道具（加入食材前使用）", center: true, minHeight: 24, variation: "LabelDim"));
-
-        _itemCountLabel = MakeLabel("持有道具：0", center: true, minHeight: 24);
-        itemCol.AddChild(_itemCountLabel);
-
-        _itemRow = MakeFlowRow();
-        itemCol.AddChild(_itemRow);
-
-        // ── 食材候选 ──────────────────────────────────────────────────────────
+        // ── 1. 当前需操作：食材候选（3 选 1）+ 倒水 ──────────────────────────────
         var candidatePanel = MakePanel("PanelPlate");
         vbox.AddChild(candidatePanel);
         var candidateCol = MakeColumn(UiMetrics.Gap);
@@ -344,6 +247,37 @@ public partial class Main : Node
         _skipBowlButton.CustomMinimumSize = new Vector2(280, 32);
         _skipBowlButton.Pressed += OnSkipBowlPressed;
         candidateCol.AddChild(_skipBowlButton);
+
+        // ── 1. 当前需操作：道具 ──────────────────────────────────────────────────
+        var itemPanel = MakePanel("PanelCard");
+        vbox.AddChild(itemPanel);
+        var itemCol = MakeColumn(UiMetrics.Gap);
+        itemPanel.AddChild(itemCol);
+
+        itemCol.AddChild(MakeLabel("道具（加入食材前使用）", center: true, minHeight: 24, variation: "LabelDim"));
+
+        _itemCountLabel = MakeLabel("持有道具：0", center: true, minHeight: 24);
+        itemCol.AddChild(_itemCountLabel);
+
+        _itemRow = MakeFlowRow();
+        itemCol.AddChild(_itemRow);
+
+        // ── 1. 当前需操作：碗 / 锅推进按钮 ──────────────────────────────────────
+        // 普通锅结束后的跨锅推进入口
+        _nextPotButton = new Button();
+        _nextPotButton.Text = "进入下一锅";
+        _nextPotButton.CustomMinimumSize = new Vector2(176, 32);
+        _nextPotButton.Pressed += OnNextPotPressed;
+        vbox.AddChild(_nextPotButton);
+
+        // 最终锅专用入口：玩家决定「放好」后，整口最终锅一次性结算
+        _endCookingButton = new Button();
+        _endCookingButton.Text = "结束煮粥（结算最终锅）";
+        _endCookingButton.CustomMinimumSize = new Vector2(224, 32);
+        _endCookingButton.Pressed += OnEndCookingPressed;
+        vbox.AddChild(_endCookingButton);
+
+        // ── 2. 锅末流程：奖励 → 伙伴候选 → 已有伙伴 → 商店 → 路线（串联顺序不变）──
 
         // 普通锅结束后的 X 选 1 食材奖励区域（仅奖励态显示）
         _rewardSection = MakePanel("PanelCard");
@@ -426,19 +360,111 @@ public partial class Main : Node
         _skipRouteButton.Pressed += OnSkipRoutePressed;
         routeCol.AddChild(_skipRouteButton);
 
-        // 普通锅结束后的跨锅推进入口
-        _nextPotButton = new Button();
-        _nextPotButton.Text = "进入下一锅";
-        _nextPotButton.CustomMinimumSize = new Vector2(176, 32);
-        _nextPotButton.Pressed += OnNextPotPressed;
-        vbox.AddChild(_nextPotButton);
+        // ── 3. 信息区：分数明细 / 食客 / 饕餮 / 结算文案 / 金币 ──────────────────
+        var infoPanel = MakePanel("PanelPlate");
+        vbox.AddChild(infoPanel);
+        var infoCol = MakeColumn(UiMetrics.Gap);
+        infoPanel.AddChild(infoCol);
 
-        // 最终锅专用入口：玩家决定「放好」后，整口最终锅一次性结算
-        _endCookingButton = new Button();
-        _endCookingButton.Text = "结束煮粥（结算最终锅）";
-        _endCookingButton.CustomMinimumSize = new Vector2(224, 32);
-        _endCookingButton.Pressed += OnEndCookingPressed;
-        vbox.AddChild(_endCookingButton);
+        // 章 / 锅 / 碗数 / 阶段与「分数 + 倍率」已上移到常驻 HUD（见 BuildHud），此处只留分数明细。
+        _scoreLabel = MakeLabel("基础分：0", center: true, minHeight: 24);
+        infoCol.AddChild(_scoreLabel);
+        _flavorScoreLabel = MakeLabel("味道分：0", center: true, minHeight: 24);
+        infoCol.AddChild(_flavorScoreLabel);
+        _finalScoreLabel = MakeLabel("最终分数：0", center: true, minHeight: 24);
+        infoCol.AddChild(_finalScoreLabel);
+        _totalScoreLabel = MakeLabel("本锅累计基础分：0", center: true, minHeight: 24);
+        infoCol.AddChild(_totalScoreLabel);
+        _customerLabel = MakeLabel("当前食客：--", center: true, minHeight: 24, variation: "LabelDim");
+        infoCol.AddChild(_customerLabel);
+
+        // 饕餮试吃区：仅当前食客是饕餮时显示，文案/台词全部取自 BossConfig。
+        _bossLabel = MakeLabel("饕餮：--", center: true, minHeight: 24);
+        _bossLabel.Visible = false;
+        infoCol.AddChild(_bossLabel);
+
+        _bossLineLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
+        _bossLineLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _bossLineLabel.Visible = false;
+        infoCol.AddChild(_bossLineLabel);
+
+        // 最近一次试吃判定（章末 Boss / 最终锅真身共用），无记录时隐藏。
+        _bossVerdictLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
+        _bossVerdictLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _bossVerdictLabel.Visible = false;
+        infoCol.AddChild(_bossVerdictLabel);
+
+        // 本局终止 / 终局文案：放在信息区靠上位置，避免被长滚动区裁到视口外。
+        _runEndLabel = MakeLabel(string.Empty, center: true, minHeight: 56);
+        _runEndLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _runEndLabel.Visible = false;
+        infoCol.AddChild(_runEndLabel);
+
+        // 本局结束后的重开入口：仅在 IsRunComplete 时可见 / 可点。
+        _restartButton = new Button();
+        _restartButton.Text = "重新开始（投胎重来）";
+        _restartButton.CustomMinimumSize = new Vector2(224, 32);
+        _restartButton.Visible = false;
+        _restartButton.Pressed += OnRestartPressed;
+        infoCol.AddChild(_restartButton);
+
+        _goldLabel = MakeLabel("金币：0", center: true, minHeight: 24);
+        infoCol.AddChild(_goldLabel);
+
+        // 七味条已上移常驻 HUD；味道种类 / 陈酿 / 固化 / 臭 / 锅底已移入详情抽屉（见 BuildUI 顶部）。
+
+        // ── 4. 档位与元操作：职业 / 存档读档 ────────────────────────────────────
+
+        // 职业选择（7 个职业按钮在窄屏下自动换行）：进行中点击需二次确认才会重开本局。
+        var professionPanel = MakePanel("PanelPlate");
+        vbox.AddChild(professionPanel);
+        var professionCol = MakeColumn(UiMetrics.Gap);
+        professionPanel.AddChild(professionCol);
+
+        _professionLabel = MakeLabel("职业：--", center: true, minHeight: 24, variation: "LabelDim");
+        professionCol.AddChild(_professionLabel);
+
+        _professionRow = MakeFlowRow();
+        professionCol.AddChild(_professionRow);
+
+        foreach (var profession in ProfessionConfig.All)
+        {
+            var captured = profession;
+            var professionButton = new Button();
+            professionButton.Text = captured.Name;
+            professionButton.CustomMinimumSize = new Vector2(112, 32);
+            professionButton.TooltipText = captured.Description;
+            professionButton.Pressed += () => OnProfessionPressed(captured.Id);
+            _professionRow.AddChild(professionButton);
+            _professionButtons.Add((captured.Id, professionButton, captured.Name));
+        }
+
+        // 存档 / 读档（随时可用，读档会从当前锅开头重新开始）
+        var savePanel = MakePanel("PanelCard");
+        vbox.AddChild(savePanel);
+        var saveCol = MakeColumn(UiMetrics.Gap);
+        savePanel.AddChild(saveCol);
+
+        var saveRow = new HBoxContainer();
+        saveRow.Alignment = BoxContainer.AlignmentMode.Center;
+        saveRow.AddThemeConstantOverride("separation", UiMetrics.Gap);
+        saveCol.AddChild(saveRow);
+
+        _saveButton = new Button();
+        _saveButton.Text = "存档";
+        _saveButton.CustomMinimumSize = new Vector2(112, 32);
+        _saveButton.Pressed += OnSavePressed;
+        saveRow.AddChild(_saveButton);
+
+        _loadButton = new Button();
+        _loadButton.Text = "读档";
+        _loadButton.CustomMinimumSize = new Vector2(112, 32);
+        _loadButton.Pressed += OnLoadPressed;
+        saveRow.AddChild(_loadButton);
+
+        _saveFeedbackLabel = MakeLabel(string.Empty, center: true, minHeight: 24, variation: "LabelDim");
+        _saveFeedbackLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        saveCol.AddChild(_saveFeedbackLabel);
 
         // tooltip 挂到 uiRoot 的顶层覆盖 Control，脱离 vbox 布局流并继承 uiRoot 主题（像素皮肤）；
         // MouseFilter.Ignore 让它彻底不参与鼠标事件，防止闪烁。
@@ -546,12 +572,18 @@ public partial class Main : Node
         }
     }
 
-    /// <summary>详情抽屉开合：只切 Visible 与按钮文案，不影响游戏状态，也无需置脏刷新。</summary>
+    /// <summary>
+    /// 详情抽屉开合：只切 Visible 与按钮文案，不影响游戏状态，也无需置脏刷新。
+    /// 视为「先不重开」的操作，顺带清除职业重开的待确认态。
+    /// </summary>
     private void OnDetailTogglePressed()
     {
         _detailOpen = !_detailOpen;
         _detailDrawer.Visible = _detailOpen;
         _detailToggleButton.Text = _detailOpen ? DetailOpenText : DetailClosedText;
+
+        _pendingProfessionId = null;
+        UpdateProfessionButtons();
     }
 
     private static Label MakeLabel(string text, bool center = false, int minHeight = 0, string? variation = null)
@@ -627,6 +659,13 @@ public partial class Main : Node
 
     public override void _Process(double delta)
     {
+        // 上一帧 RefreshUI 置的自动定位请求：等布局完成后再滚动，避免用旧尺寸计算。
+        if (_pendingScrollTarget != null)
+        {
+            _scroll.EnsureControlVisible(_pendingScrollTarget);
+            _pendingScrollTarget = null;
+        }
+
         if (_uiDirty)
         {
             _uiDirty = false;
@@ -794,9 +833,13 @@ public partial class Main : Node
     /// <summary>
     /// 存档：把 GameController 抓取的 DTO 序列化后写入本地文件，并给一句反馈。
     /// 写文件失败由 SaveStore 返回 false，据此提示「存档失败」，不崩游戏。
+    /// 视为「先不重开」的操作，顺带清除职业重开的待确认态。
     /// </summary>
     private void OnSavePressed()
     {
+        _pendingProfessionId = null;
+        UpdateProfessionButtons();
+
         try
         {
             bool ok = SaveStore.Write(SaveSerializer.ToJson(_controller.CaptureSave()));
@@ -847,13 +890,63 @@ public partial class Main : Node
     }
 
     /// <summary>
-    /// 职业选择入口：用选定职业直接开一局新游戏，随后刷新。
+    /// 职业选择入口：进行中点击职业会重开本局，故加一道「二次点击确认」防误点。
+    /// 首次点击只把该按钮切成「确认重开？」，再点一次同一按钮才会真正重开；
+    /// 期间发生任何游戏事件（<see cref="OnGameEvent"/>）都会取消待确认态。
     /// 表现层只转发 GameController.StartNewGame，不参与任何流程判断。
     /// </summary>
     private void OnProfessionPressed(string professionId)
     {
+        if (_pendingProfessionId != professionId)
+        {
+            _pendingProfessionId = professionId;
+            UpdateProfessionButtons();
+            return;
+        }
+
+        _pendingProfessionId = null;
+        UpdateProfessionButtons();
         _controller.StartNewGame(professionId);
         _uiDirty = true;
+    }
+
+    /// <summary>职业按钮文案：待确认的那个显示「确认重开？」，其余恢复职业名。</summary>
+    private void UpdateProfessionButtons()
+    {
+        foreach (var (id, button, name) in _professionButtons)
+            button.Text = id == _pendingProfessionId ? ProfessionConfirmText : name;
+    }
+
+    /// <summary>
+    /// 依据当前状态挑出「最需要用户操作」的区块；只在目标区块发生变化时请求滚动，
+    /// 避免每次 RefreshUI 都把玩家手动滚动的位置重置回去。未激活的区块不参与定位。
+    /// </summary>
+    private Control? ResolveScrollTarget()
+    {
+        if (_controller.IsRunComplete)
+            return _restartButton.Visible ? _restartButton : null;
+
+        // 锅末流程严格串行：奖励 → 伙伴 → 商店 → 路线，同一时刻至多一个激活。
+        if (_controller.IsAwaitingReward)
+            return _rewardSection;
+        if (_controller.IsAwaitingCompanionChoice)
+            return _companionSection;
+        if (_controller.IsShopOpen)
+            return _shopSection;
+        if (_controller.IsAwaitingRouteChoice)
+            return _routeSection;
+
+        // 本碗主操作优先于跨锅推进：最终锅全程可结束煮粥，但不能因此把选食材挤出视野。
+        if (_controller.CanSelectIngredient)
+            return _candidateRow;
+        if (_controller.CanSkipBowl)
+            return _skipBowlButton;
+        if (_controller.CanEndCooking)
+            return _endCookingButton;
+        if (_controller.CanAdvanceToNextPot)
+            return _nextPotButton;
+
+        return null;
     }
 
     private void RefreshUI()
@@ -957,6 +1050,14 @@ public partial class Main : Node
         _restartButton.Disabled = !runOver;
 
         RefreshRunEnd(run, pot);
+
+        // 事件驱动自动定位：只有「最需要操作的区块」发生变化才请求滚动一次（下一帧布局完成后执行）。
+        var scrollTarget = ResolveScrollTarget();
+        if (scrollTarget != _lastScrollTarget)
+        {
+            _lastScrollTarget = scrollTarget;
+            _pendingScrollTarget = scrollTarget;
+        }
     }
 
     /// <summary>
