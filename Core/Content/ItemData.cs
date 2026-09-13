@@ -10,6 +10,9 @@ namespace SevenSpices.Core.Content;
 /// </summary>
 public static class ItemData
 {
+    /// <summary>仙丹粉末的统一 ID（Definition id / SpecialRegistry / BossConfig 赏赐默认值共用）。</summary>
+    public const string ImmortalPowderId = "immortal_powder";
+
     // ── Definition 静态属性 ────────────────────────────────────────────────────
 
     /// <summary>甜味剂：甜 +2。</summary>
@@ -50,11 +53,33 @@ public static class ItemData
         Sweetener, ChiliPowder, AgedVinegar, Msg, Salt
     });
 
+    // ── Boss 专属道具 ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 仙丹粉末：饕餮满意赏赐，基础分 +N、七味各 +M（数值取自 BossConfig，TBD）。
+    /// 不进商店与随机掉落——只存在于 SpecialRegistry。
+    /// </summary>
+    public static ItemDefinition ImmortalPowder { get; } = new(
+        id: ImmortalPowderId,
+        name: "仙丹粉末",
+        effects: new IEffect[]
+        {
+            new AddScoreEffect(BossConfig.Default.ImmortalPowderBaseScore),
+            new AddAllFlavorsEffect(BossConfig.Default.ImmortalPowderFlavorAmount),
+        });
+
+    /// <summary>Boss 专属道具 Registry：商店 / 随机掉落只读 Registry，Boss 赏赐只读本 Registry。</summary>
+    public static ItemRegistry SpecialRegistry { get; } = new(new[] { ImmortalPowder });
+
     // ── 工厂方法 ──────────────────────────────────────────────────────────────
 
     /// <summary>从正式 Registry 按 ID 创建新的 ItemInstance。</summary>
     public static ItemInstance CreateInstance(string itemId) =>
         new(Registry.Get(itemId));
+
+    /// <summary>创建 1 个仙丹粉末实例（Boss 满意赏赐）。</summary>
+    public static ItemInstance CreateImmortalPowder() =>
+        new(SpecialRegistry.Get(ImmortalPowderId));
 
     /// <summary>
     /// 从正式 Registry 的全部道具中随机取一个 Definition 创建实例。

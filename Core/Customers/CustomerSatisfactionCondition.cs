@@ -12,6 +12,9 @@ public enum ConditionType
 
     /// <summary>本锅累计指定味道值 >= Threshold。由 SatisfactionCondition.FlavorTarget 指定具体味道。</summary>
     FlavorAtLeast,
+
+    /// <summary>本锅累计最终分（Σ 每碗 FinalScore，含倍率）>= Threshold。</summary>
+    PotTotalScoreAtLeast,
 }
 
 /// <summary>

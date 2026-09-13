@@ -54,6 +54,7 @@ public static class TestRunner
         BottomExtractorTests.RunAll();
         RunControllerTests.RunAll();
         FinalPotSettlementTests.RunAll();
+        BossSettlementTests.RunAll();
         IngredientDataTests.RunAll();
         FullCoreRunTests.RunAll();
         CompanionSystemTests.RunAll();

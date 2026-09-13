@@ -49,6 +49,28 @@ public static class CustomerData
         },
         companionReward: CompanionData.GenerousGuestCompanion);
 
+    // ── 饕餮（每章末 Boss / 最终锅真身）────────────────────────────────────────
+    // 满意条件是「本锅累计最终分 >= 阈值」。
+    // 刻意不绑伙伴（不进伙伴候选）、不走随机掉落（赏赐由 Boss 专属流程发放）。
+
+    /// <summary>第 1 章末饕餮：幼体。</summary>
+    public static CustomerDefinition TaotieChild { get; } = BuildTaotie(BossConfig.Default.GetChapterForm(1));
+
+    /// <summary>第 2 章末饕餮：少女。</summary>
+    public static CustomerDefinition TaotieMaiden { get; } = BuildTaotie(BossConfig.Default.GetChapterForm(2));
+
+    /// <summary>第 3 章末饕餮：御姐。</summary>
+    public static CustomerDefinition TaotieLady { get; } = BuildTaotie(BossConfig.Default.GetChapterForm(3));
+
+    /// <summary>最终锅真身：饕餮。</summary>
+    public static CustomerDefinition TaotieTrue { get; } = BuildTaotie(BossConfig.Default.GetForm("taotie_true"));
+
+    /// <summary>全部饕餮形态（3 个章末形态 + 真身），顺序与 BossConfig 一致。</summary>
+    public static IReadOnlyList<CustomerDefinition> TaotieForms { get; } = new[]
+    {
+        TaotieChild, TaotieMaiden, TaotieLady, TaotieTrue
+    };
+
     /// <summary>创建新的普通食客实例。</summary>
     public static CustomerInstance CreateNormalInstance() =>
         new(NormalCustomer);
@@ -64,4 +86,45 @@ public static class CustomerData
     /// <summary>创建新的豪爽客实例。</summary>
     public static CustomerInstance CreateGenerousGuestInstance() =>
         new(GenerousGuestCustomer);
+
+    /// <summary>按形态 Id 取饕餮定义；找不到抛 <see cref="ArgumentException"/>。</summary>
+    public static CustomerDefinition GetTaotieDefinition(string formId)
+    {
+        foreach (var definition in TaotieForms)
+        {
+            if (definition.Id == formId)
+                return definition;
+        }
+
+        throw new ArgumentException($"Taotie form with Id '{formId}' not found.", nameof(formId));
+    }
+
+    /// <summary>按形态 Id 创建饕餮实例。</summary>
+    public static CustomerInstance CreateTaotieInstance(string formId) =>
+        new(GetTaotieDefinition(formId));
+
+    /// <summary>创建第 1 章末饕餮·幼体实例。</summary>
+    public static CustomerInstance CreateTaotieChildInstance() => new(TaotieChild);
+
+    /// <summary>创建第 2 章末饕餮·少女实例。</summary>
+    public static CustomerInstance CreateTaotieMaidenInstance() => new(TaotieMaiden);
+
+    /// <summary>创建第 3 章末饕餮·御姐实例。</summary>
+    public static CustomerInstance CreateTaotieLadyInstance() => new(TaotieLady);
+
+    /// <summary>创建最终锅饕餮真身实例。</summary>
+    public static CustomerInstance CreateTaotieTrueInstance() => new(TaotieTrue);
+
+    /// <summary>
+    /// 由 <see cref="BossFormConfig"/> 构建饕餮 Definition：阈值从配置取，不硬编码；
+    /// 刻意不传 companionReward（= null）。
+    /// </summary>
+    static CustomerDefinition BuildTaotie(BossFormConfig form) => new(
+        id: form.Id,
+        name: form.Name,
+        isRare: true,
+        satisfactionConditions: new[]
+        {
+            new CustomerSatisfactionCondition(ConditionType.PotTotalScoreAtLeast, form.SatisfyThreshold)
+        });
 }

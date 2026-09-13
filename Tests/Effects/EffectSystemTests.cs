@@ -17,6 +17,7 @@ public static class EffectSystemTests
         Test_NewContext_AllowsRetriggerOfSameSource();
         Test_ChainIds_AreUnique();
         Test_TriggeredEffects_AreRecorded();
+        Test_TriggerAll_AppliesAllEffectsOfSameSource();
         Test_TriggerAll_SkipsAlreadyTriggeredSource();
 
         Console.WriteLine("All EffectSystemTests passed.");
@@ -117,6 +118,27 @@ public static class EffectSystemTests
         Assert(ctx.TriggeredEffects.Contains("effect_a"), "effect_a should be recorded");
         Assert(ctx.TriggeredEffects.Contains("effect_b"), "effect_b should be recorded");
         Assert(ctx.TriggeredEffects.Count == 2, "Exactly 2 effects should be recorded");
+    }
+
+    /// <summary>同一 sourceId 携带多个效果时，TriggerAll 应全部执行（source 去重在触发源级别）。</summary>
+    static void Test_TriggerAll_AppliesAllEffectsOfSameSource()
+    {
+        int a = 0, b = 0, c = 0;
+        var effects = new[]
+        {
+            new LambdaEffect("effect_multi_a", _ => a++),
+            new LambdaEffect("effect_multi_b", _ => b++),
+            new LambdaEffect("effect_multi_c", _ => c++),
+        };
+        var ctx = MakeContext();
+        var sys = MakeSystem();
+
+        sys.TriggerAll(effects, "source_multi", ctx);
+
+        Assert(a == 1 && b == 1 && c == 1,
+            "Same source should apply all of its effects (each exactly once)");
+        Assert(ctx.TriggeredEffects.Count == 3, "All 3 effects should be recorded");
+        Assert(ctx.TriggeredSources.Contains("source_multi"), "source should be marked as triggered");
     }
 
     static void Test_TriggerAll_SkipsAlreadyTriggeredSource()

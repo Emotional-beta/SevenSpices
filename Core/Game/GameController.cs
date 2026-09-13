@@ -50,15 +50,18 @@ public class GameController
     /// <param name="potReward">锅结束奖励配置（X 选 1）；为空则使用默认配置。</param>
     /// <param name="shop">商店配置（陈列数量与价格）；为空则使用默认配置。</param>
     /// <param name="flavorConfig">味道系统可调数值配置；为空则使用 <see cref="FlavorConfig.Default"/>，并透传给每一锅的 PotController（预览与真实结算共用同一份）。</param>
+    /// <param name="metaState">局外（跨局）保留状态；为空则新建。由外部持有并在新局开始时注入，以实现跨局保留。</param>
     public GameController(
         GameState? state = null,
         CustomerAppearanceConfig? appearance = null,
         Random? random = null,
         PotRewardConfig? potReward = null,
         ShopConfig? shop = null,
-        FlavorConfig? flavorConfig = null)
+        FlavorConfig? flavorConfig = null,
+        MetaState? metaState = null)
     {
         _state = state ?? new GameState();
+        Meta = metaState ?? new MetaState();
         _flavorConfig = flavorConfig ?? FlavorConfig.Default;
         // 伙伴系统复用 PlayerState.Companions 的同一列表，不另存副本；须在 RunController 之前建立。
         _companions = new CompanionSystem(_state.Player.Companions);
@@ -76,6 +79,9 @@ public class GameController
 
     /// <summary>本局的只读事件总线，供表现层 / 伙伴系统等订阅刷新。</summary>
     public EventBus Events => _events;
+
+    /// <summary>局外（跨局）保留状态：由外部持有并注入，承载 Boss 赏赐「仙丹粉末」。</summary>
+    public MetaState Meta { get; }
 
     public RunState Run => _state.Run;
     public PotState Pot => _state.Pot;

@@ -49,6 +49,13 @@ public class PotState
     /// <summary>本锅所有已完成碗的基础分累计（含效果加成）。StartPot 时归零，不随 StartBowl 重置。</summary>
     public int TotalBaseScore { get; set; }
 
+    /// <summary>
+    /// 本锅累计最终分：Σ 每碗锁定后的 <see cref="FinalScore"/>（含倍率）。
+    /// 饕餮（Boss）判定读数；不用于预览，因此刻意不纳入 PotStateSnapshot（见方案 §4.2）。
+    /// 由 ScoreCalculator.CalculateAndLock 在每次锁分后累加，StartPot/Reset 时归零。
+    /// </summary>
+    public int TotalFinalScore { get; set; }
+
     /// <summary>本碗最终分（倍率应用后锁定）。</summary>
     public int FinalScore { get; set; }
 
@@ -208,6 +215,7 @@ public class PotState
         BaseScore = 0;
         FinalScore = 0;
         TotalBaseScore = 0;
+        TotalFinalScore = 0;
         FinalScoreMultiplier = 1.0;
         IsScoreLocked = false;
         AgingPool = 0.0;

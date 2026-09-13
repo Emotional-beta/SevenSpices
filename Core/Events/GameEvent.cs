@@ -252,3 +252,79 @@ public sealed class CompanionChoiceSkippedEvent : GameEvent
     }
 }
 
+/// <summary>遭遇饕餮（章末或最终锅真身）。只定义，暂不派发。</summary>
+public sealed class BossEncounteredEvent : GameEvent
+{
+    public string BossId { get; }
+    public string BossName { get; }
+    public int Chapter { get; }
+    public int PotIndex { get; }
+    public bool IsFinalPot { get; }
+    public int BowlNumber { get; }
+
+    public BossEncounteredEvent(
+        string bossId,
+        string bossName,
+        int chapter,
+        int potIndex,
+        bool isFinalPot,
+        int bowlNumber)
+    {
+        BossId = bossId ?? throw new ArgumentNullException(nameof(bossId));
+        BossName = bossName ?? throw new ArgumentNullException(nameof(bossName));
+        Chapter = chapter;
+        PotIndex = potIndex;
+        IsFinalPot = isFinalPot;
+        BowlNumber = bowlNumber;
+    }
+}
+
+/// <summary>饕餮试吃判定完成（满意 / 嫌弃）。只定义，暂不派发。</summary>
+public sealed class BossEvaluatedEvent : GameEvent
+{
+    public string BossId { get; }
+    public string BossName { get; }
+    public int Chapter { get; }
+    public int PotIndex { get; }
+    public bool IsFinalPot { get; }
+    public bool Satisfied { get; }
+    public int Threshold { get; }
+    public int PotTotalFinalScore { get; }
+
+    public BossEvaluatedEvent(
+        string bossId,
+        string bossName,
+        int chapter,
+        int potIndex,
+        bool isFinalPot,
+        bool satisfied,
+        int threshold,
+        int potTotalFinalScore)
+    {
+        BossId = bossId ?? throw new ArgumentNullException(nameof(bossId));
+        BossName = bossName ?? throw new ArgumentNullException(nameof(bossName));
+        Chapter = chapter;
+        PotIndex = potIndex;
+        IsFinalPot = isFinalPot;
+        Satisfied = satisfied;
+        Threshold = threshold;
+        PotTotalFinalScore = potTotalFinalScore;
+    }
+}
+
+/// <summary>本局失败终止（章末被嫌弃吞下）。只定义，暂不派发。</summary>
+public sealed class RunFailedEvent : GameEvent
+{
+    /// <summary>保底评价文案（如「嫌弃，但是鼓励」）。</summary>
+    public string Reason { get; }
+    public int Chapter { get; }
+    public int PotIndex { get; }
+
+    public RunFailedEvent(string reason, int chapter, int potIndex)
+    {
+        Reason = reason ?? throw new ArgumentNullException(nameof(reason));
+        Chapter = chapter;
+        PotIndex = potIndex;
+    }
+}
+

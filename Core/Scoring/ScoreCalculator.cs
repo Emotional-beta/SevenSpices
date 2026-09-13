@@ -117,5 +117,8 @@ public static class ScoreCalculator
 
         pot.FinalScore = ComputeFinalScore(pot);
         pot.IsScoreLocked = true;
+
+        // 本锅累计最终分（含倍率）：普通锅逐碗累加，最终锅一次性结算累加一次。
+        pot.TotalFinalScore += pot.FinalScore;
     }
 }

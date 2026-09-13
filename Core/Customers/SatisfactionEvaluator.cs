@@ -29,6 +29,7 @@ public static class SatisfactionEvaluator
             ConditionType.ScoreAtLeast => potState.FinalScore >= condition.Threshold,
             ConditionType.FlavorAtLeast => condition.FlavorTarget.HasValue
                 && potState.GetFlavor(condition.FlavorTarget.Value) >= condition.Threshold,
+            ConditionType.PotTotalScoreAtLeast => potState.TotalFinalScore >= condition.Threshold,
             _ => false,
         };
     }
