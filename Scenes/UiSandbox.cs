@@ -8,9 +8,15 @@ public partial class UiSandbox : Control
 {
     private const int WarmupFrames = 12;
     private const string OutputDir = "res://generated-images/ui-m1";
+    private const string MotifOutputDir = "res://generated-images/ui-m5";
 
     private PanelContainer _plate = null!;
     private PixelBar _bar = null!;
+    private MotifBand _motifThunder = null!;
+    private MotifBand _motifMeander = null!;
+    private MotifBand _motifCloud = null!;
+    private MotifBand _motifVertical = null!;
+    private Control _motifAreaRoot = null!;
     private int _frames;
     private bool _done;
 
@@ -76,6 +82,8 @@ public partial class UiSandbox : Control
             ThemeTypeVariation = "LabelTitle",
         });
 
+        BuildMotifArea(col);
+
         _plate = new PanelContainer { ThemeTypeVariation = "PanelPlate" };
         col.AddChild(_plate);
         var plateMargin = MakeMargin(UiMetrics.Pad);
@@ -123,6 +131,60 @@ public partial class UiSandbox : Control
         buttonRow.AddChild(new Button { Text = "开始烹饪" });
         buttonRow.AddChild(new Button { Text = "翻看食谱" });
         buttonRow.AddChild(new Button { Text = "禁用态", Disabled = true });
+    }
+
+    /// <summary>
+    /// 纹样展示区（M5）：三条水平饰带（雷纹 / 回纹 / 云纹）+ 一条垂直回纹带，
+    /// 用于截图回归与人眼核验；像素周期断言见 <see cref="CheckMotifPeriodicity"/>。
+    /// </summary>
+    private void BuildMotifArea(Container parent)
+    {
+        parent.AddChild(new Label
+        {
+            Text = "纹样展示：雷纹 / 回纹 / 云纹（unit=8, pen=1）",
+            ThemeTypeVariation = "LabelDim",
+        });
+
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", UiMetrics.Gap);
+        parent.AddChild(row);
+
+        _motifAreaRoot = row;
+
+        var stack = new VBoxContainer();
+        stack.AddThemeConstantOverride("separation", UiMetrics.Unit / 2);
+        stack.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        row.AddChild(stack);
+
+        _motifThunder = MakeMotifBand(MotifKind.Thunder, MotifOrientation.Horizontal);
+        stack.AddChild(_motifThunder);
+
+        _motifMeander = MakeMotifBand(MotifKind.Meander, MotifOrientation.Horizontal);
+        stack.AddChild(_motifMeander);
+
+        _motifCloud = MakeMotifBand(MotifKind.Cloud, MotifOrientation.Horizontal);
+        stack.AddChild(_motifCloud);
+
+        _motifVertical = MakeMotifBand(MotifKind.Meander, MotifOrientation.Vertical);
+        _motifVertical.CustomMinimumSize = new Vector2(UiMetrics.Unit, UiMetrics.Unit * 5);
+        row.AddChild(_motifVertical);
+    }
+
+    private static MotifBand MakeMotifBand(MotifKind kind, MotifOrientation orientation)
+    {
+        var band = new MotifBand
+        {
+            Kind = kind,
+            Orientation = orientation,
+            Unit = UiMetrics.Unit,
+            Pen = 1,
+            MotifColor = UiPalette.BorderHi,
+        };
+        if (orientation == MotifOrientation.Horizontal)
+            band.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        else
+            band.SizeFlagsVertical = SizeFlags.Fill;
+        return band;
     }
 
     private static MarginContainer MakeMargin(int margin)
@@ -250,6 +312,24 @@ public partial class UiSandbox : Control
             ok = false;
         }
 
+        string motifDir = ProjectSettings.GlobalizePath(MotifOutputDir);
+        Error motifMkdir = DirAccess.MakeDirRecursiveAbsolute(motifDir);
+        if (motifMkdir != Error.Ok && motifMkdir != Error.AlreadyExists)
+        {
+            GD.PrintErr($"[UiSandbox] FAIL：无法创建纹样输出目录 {motifDir}，错误 = {motifMkdir}");
+            ok = false;
+        }
+        else
+        {
+            string motifPath = SaveMotifZoom(image, motifDir, scale, out Error motifErr);
+            GD.Print($"[UiSandbox] motif-zoom.png -> {motifPath}（保存结果 = {motifErr}）");
+            if (motifErr != Error.Ok)
+            {
+                GD.PrintErr($"[UiSandbox] FAIL：motif-zoom.png 写盘失败，错误 = {motifErr}");
+                ok = false;
+            }
+        }
+
         if (imageMatchesScale && windowMatchesScale)
         {
             ok &= RunAssertions(image, offX, offY, scale);
@@ -281,6 +361,158 @@ public partial class UiSandbox : Control
         return path;
     }
 
+    /// <summary>把纹样展示区（三条水平带 + 一条垂直带）裁剪后用最近邻放大 8 倍存盘。</summary>
+    private string SaveMotifZoom(Image image, string dir, int scale, out Error saveError)
+    {
+        Rect2 area = _motifAreaRoot.GetGlobalRect();
+        var region = new Rect2I(
+            Mathf.RoundToInt(area.Position.X) * scale,
+            Mathf.RoundToInt(area.Position.Y) * scale,
+            Mathf.RoundToInt(area.Size.X) * scale,
+            Mathf.RoundToInt(area.Size.Y) * scale);
+        region = region.Intersection(new Rect2I(0, 0, image.GetWidth(), image.GetHeight()));
+
+        var crop = image.GetRegion(region);
+        crop.Resize(crop.GetWidth() * 8, crop.GetHeight() * 8, Image.Interpolation.Nearest);
+
+        string path = dir.PathJoin("motif-zoom.png");
+        saveError = crop.SavePng(path);
+        return path;
+    }
+
+    /// <summary>
+    /// 纹样存在性断言（与周期无关）：统计饰带矩形内动机色像素的占比，
+    /// 要求落在合理区间——占比 0 说明什么都没画（命中 Draw 的静默返回），
+    /// 占比 100% 说明退化成实心块。两者都必须判 FAIL。
+    /// </summary>
+    private static bool CheckMotifExistence(
+        Image image, MotifBand band, int offX, int offY, int scale, string name)
+    {
+        const float minRatio = 0.05f;
+        const float maxRatio = 0.80f;
+
+        Rect2 rect = band.GetGlobalRect();
+        int baseX = offX + Mathf.RoundToInt(rect.Position.X) * scale;
+        int baseY = offY + Mathf.RoundToInt(rect.Position.Y) * scale;
+        int width = Mathf.RoundToInt(rect.Size.X) * scale;
+        int height = Mathf.RoundToInt(rect.Size.Y) * scale;
+
+        if (width <= 0 || height <= 0
+            || baseX < 0 || baseY < 0
+            || baseX + width > image.GetWidth()
+            || baseY + height > image.GetHeight())
+        {
+            GD.PrintErr(
+                $"[UiSandbox] {name} 存在性断言 FAIL：饰带区域非法或越界 "
+                + $"({baseX},{baseY},{width}x{height})，图像 {image.GetWidth()}x{image.GetHeight()}");
+            return false;
+        }
+
+        Color motif = band.MotifColor;
+        int total = width * height;
+        int filled = 0;
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                if (ColorEq(image.GetPixel(baseX + x, baseY + y), motif))
+                    filled++;
+            }
+        }
+
+        float ratio = filled / (float)total;
+        bool ok = ratio >= minRatio && ratio <= maxRatio;
+        string report =
+            $"[UiSandbox] {name} 存在性断言 {(ok ? "PASS" : "FAIL")}：动机色 {motif.ToHtml()} "
+            + $"像素={filled}/{total}，占比={ratio * 100f:0.0}%（要求 {minRatio * 100f:0}%~{maxRatio * 100f:0}%）";
+
+        if (ok)
+            GD.Print(report);
+        else
+            GD.PrintErr(report);
+        return ok;
+    }
+
+    /// <summary>
+    /// 纹样周期性断言：在同一饰带内，比较「相邻两个 unit」上相同位置的每个物理像素，
+    /// 一致即说明图案确实按 unit 周期重复、接缝无错位。输出实测比较次数与不一致数。
+    /// </summary>
+    private static bool CheckMotifPeriodicity(
+        Image image, MotifBand band, int offX, int offY, int scale, string name)
+    {
+        Rect2 rect = band.GetGlobalRect();
+        int baseX = offX + Mathf.RoundToInt(rect.Position.X) * scale;
+        int baseY = offY + Mathf.RoundToInt(rect.Position.Y) * scale;
+        int bandW = Mathf.RoundToInt(rect.Size.X);
+        int bandH = Mathf.RoundToInt(rect.Size.Y);
+        int unit = band.Unit;
+        bool horizontal = band.Orientation == MotifOrientation.Horizontal;
+
+        int runLen = horizontal ? bandW : bandH;
+        int crossLen = horizontal ? bandH : bandW;
+        int periods = runLen / unit;
+        if (periods < 2)
+        {
+            GD.PrintErr($"[UiSandbox] {name} 周期断言 FAIL：可用周期数 {periods} < 2，无法比较");
+            return false;
+        }
+
+        if (baseX < 0 || baseY < 0
+            || baseX + bandW * scale > image.GetWidth()
+            || baseY + bandH * scale > image.GetHeight())
+        {
+            GD.PrintErr(
+                $"[UiSandbox] {name} 周期断言 FAIL：饰带区域越界 "
+                + $"({baseX},{baseY},{bandW * scale}x{bandH * scale})，图像 {image.GetWidth()}x{image.GetHeight()}");
+            return false;
+        }
+
+        int compared = 0;
+        int mismatched = 0;
+        int firstMismatchX = -1;
+        int firstMismatchY = -1;
+
+        for (int period = 0; period < periods - 1; period++)
+        {
+            for (int a = 0; a < unit * scale; a++)
+            {
+                for (int c = 0; c < crossLen * scale; c++)
+                {
+                    int x0 = horizontal ? baseX + period * unit * scale + a : baseX + c;
+                    int y0 = horizontal ? baseY + c : baseY + period * unit * scale + a;
+                    int x1 = horizontal ? x0 + unit * scale : x0;
+                    int y1 = horizontal ? y0 : y0 + unit * scale;
+
+                    compared++;
+                    if (!ColorEq(image.GetPixel(x0, y0), image.GetPixel(x1, y1)))
+                    {
+                        mismatched++;
+                        if (firstMismatchX < 0)
+                        {
+                            firstMismatchX = x0;
+                            firstMismatchY = y0;
+                        }
+                    }
+                }
+            }
+        }
+
+        string axis = horizontal ? "水平" : "垂直";
+        if (mismatched == 0)
+        {
+            GD.Print(
+                $"[UiSandbox] {name}（{axis}）周期断言 PASS：unit={unit} 缩放={scale}x → 物理周期={unit * scale}px，"
+                + $"周期数={periods}，比较像素={compared}，不一致={mismatched}");
+            return true;
+        }
+
+        GD.PrintErr(
+            $"[UiSandbox] {name}（{axis}）周期断言 FAIL：unit={unit} → 物理周期={unit * scale}px，"
+            + $"周期数={periods}，比较像素={compared}，不一致={mismatched}，"
+            + $"首个不一致于 ({firstMismatchX},{firstMismatchY})");
+        return false;
+    }
+
     private bool RunAssertions(Image image, int offX, int offY, int scale)
     {
         Rect2 plateRect = _plate.GetGlobalRect();
@@ -299,6 +531,16 @@ public partial class UiSandbox : Control
         bool pass = true;
         pass &= CheckBorderBand(image, offX + px * scale, scanY, expectedBand, "左边框");
         pass &= CheckBorderBand(image, offX + (px + pw - UiMetrics.Border) * scale, scanY, expectedBand, "右边框");
+
+        pass &= CheckMotifExistence(image, _motifThunder, offX, offY, scale, "水平雷纹带");
+        pass &= CheckMotifExistence(image, _motifMeander, offX, offY, scale, "水平回纹带");
+        pass &= CheckMotifExistence(image, _motifCloud, offX, offY, scale, "水平云纹带");
+        pass &= CheckMotifExistence(image, _motifVertical, offX, offY, scale, "垂直回纹带");
+
+        pass &= CheckMotifPeriodicity(image, _motifThunder, offX, offY, scale, "水平雷纹带");
+        pass &= CheckMotifPeriodicity(image, _motifMeander, offX, offY, scale, "水平回纹带");
+        pass &= CheckMotifPeriodicity(image, _motifCloud, offX, offY, scale, "水平云纹带");
+        pass &= CheckMotifPeriodicity(image, _motifVertical, offX, offY, scale, "垂直回纹带");
 
         GD.Print($"[UiSandbox] 程序化断言：{(pass ? "PASS" : "FAIL")}");
         return pass;
