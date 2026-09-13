@@ -37,6 +37,12 @@ public static class SaveSerializerTests
         Test_Corrupt_ApplyFailure_PreservesExistingState();
         Test_Corrupt_RunChapterOutOfRange_Throws();
         Test_Corrupt_RouteActiveChapterOutOfRange_Throws();
+        Test_Corrupt_RouteIdEmptyButActiveChapter_Throws();
+        Test_Corrupt_RouteIdEmptyButTargetsFinalPot_Throws();
+        Test_Corrupt_RouteIdSetButNoActiveChapter_Throws();
+        Test_Corrupt_RouteTargetsFinalPotWithoutFinalChapter_Throws();
+        Test_Corrupt_RouteExtraConsistency_Throws();
+        Test_RouteState_Consistent_Passes();
         Test_Corrupt_BossRecordOutOfRange_Throws();
         Test_Corrupt_FinalPotInconsistent_Throws();
         Test_Corrupt_NegativeBottomFlavor_Throws();
@@ -348,8 +354,10 @@ public static class SaveSerializerTests
     static void Test_RouteTargetsFinalPot_RoundTrip()
     {
         var state = new GameState();
+        // 目标为最终锅的风潮只能出现在最后一章末，故进度必须是最后一章。
+        state.Run.Chapter = RunController.ChaptersPerRun;
         state.Run.RouteId = "trend_sweet";
-        state.Run.RouteActiveChapter = 3;
+        state.Run.RouteActiveChapter = RunController.ChaptersPerRun;
         state.Run.RouteTargetsFinalPot = true;
 
         string json = SaveSerializer.ToJson(SaveSerializer.Capture(state, new MetaState()));
@@ -585,6 +593,130 @@ public static class SaveSerializerTests
         Assert(target.Run.Chapter == 2 && target.Run.PotIndex == 2
                && target.Run.RouteActiveChapter == 1,
             "RouteActiveChapter 越界时目标状态不应被修改");
+    }
+
+    // ── 5c. 风潮字段间一致性 ───────────────────────────────────────────────────
+
+    static void Test_Corrupt_RouteIdEmptyButActiveChapter_Throws()
+    {
+        var data = new SaveData();
+        data.Run.RouteActiveChapter = 2;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(data, new GameState(), new MetaState()),
+            "RouteId 为空但 RouteActiveChapter != 0 应抛 InvalidDataException");
+    }
+
+    static void Test_Corrupt_RouteIdEmptyButTargetsFinalPot_Throws()
+    {
+        var data = new SaveData();
+        data.Run.RouteTargetsFinalPot = true;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(data, new GameState(), new MetaState()),
+            "RouteId 为空但 RouteTargetsFinalPot == true 应抛 InvalidDataException");
+    }
+
+    static void Test_Corrupt_RouteIdSetButNoActiveChapter_Throws()
+    {
+        var data = new SaveData();
+        data.Run.RouteId = "trend_sweet";
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(data, new GameState(), new MetaState()),
+            "RouteId 非空但 RouteActiveChapter == 0 应抛 InvalidDataException");
+    }
+
+    static void Test_Corrupt_RouteTargetsFinalPotWithoutFinalChapter_Throws()
+    {
+        var data = new SaveData();
+        data.Run.RouteId = "trend_sweet";
+        data.Run.RouteActiveChapter = 2;
+        data.Run.RouteTargetsFinalPot = true;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(data, new GameState(), new MetaState()),
+            "RouteTargetsFinalPot == true 但 RouteActiveChapter != ChaptersPerRun 应抛 InvalidDataException");
+    }
+
+    /// <summary>
+    /// 风潮字段的追加一致性：生效章节上界越界、生效章节早于当前章、
+    /// 以及标记目标为最终锅但当前章不是最后一章，都应尽早失败且不改目标状态。
+    /// </summary>
+    static void Test_Corrupt_RouteExtraConsistency_Throws()
+    {
+        // (1) RouteId 非空 + RouteActiveChapter 超出上界。
+        var activeOutOfRange = new SaveData();
+        activeOutOfRange.Run.RouteId = "trend_sweet";
+        activeOutOfRange.Run.RouteActiveChapter = RunController.ChaptersPerRun + 1;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(activeOutOfRange, new GameState(), new MetaState()),
+            "RouteId 非空但 RouteActiveChapter 超出上界应抛 InvalidDataException");
+
+        // (2) RouteId 非空 + RouteActiveChapter 早于当前章（应已到期清除）。
+        var activeBeforeChapter = new SaveData();
+        activeBeforeChapter.Run.Chapter = 3;
+        activeBeforeChapter.Run.RouteId = "trend_sweet";
+        activeBeforeChapter.Run.RouteActiveChapter = 2;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(activeBeforeChapter, new GameState(), new MetaState()),
+            "RouteActiveChapter 早于 Chapter 应抛 InvalidDataException");
+
+        // (3) RouteTargetsFinalPot == true 但当前章不是最后一章。
+        var finalPotNotLastChapter = new SaveData();
+        finalPotNotLastChapter.Run.Chapter = 2;
+        finalPotNotLastChapter.Run.RouteId = "trend_sweet";
+        finalPotNotLastChapter.Run.RouteActiveChapter = RunController.ChaptersPerRun;
+        finalPotNotLastChapter.Run.RouteTargetsFinalPot = true;
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(finalPotNotLastChapter, new GameState(), new MetaState()),
+            "RouteTargetsFinalPot == true 但 Chapter != ChaptersPerRun 应抛 InvalidDataException");
+
+        // 目标状态零副作用：非法风潮应在校验阶段失败，不提交任何字段。
+        var target = new GameState();
+        target.Run.Chapter = 2;
+        target.Run.PotIndex = 2;
+        target.Run.RouteId = "trend_sweet";
+        target.Run.RouteActiveChapter = 2;
+        target.Run.RouteTargetsFinalPot = false;
+
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(activeBeforeChapter, target, new MetaState()),
+            "RouteActiveChapter 早于 Chapter 应抛 InvalidDataException（目标态版本）");
+        AssertThrows<InvalidDataException>(
+            () => SaveSerializer.Apply(finalPotNotLastChapter, target, new MetaState()),
+            "RouteTargetsFinalPot 非法应抛 InvalidDataException（目标态版本）");
+
+        Assert(target.Run.Chapter == 2 && target.Run.PotIndex == 2
+               && target.Run.RouteId == "trend_sweet"
+               && target.Run.RouteActiveChapter == 2
+               && !target.Run.RouteTargetsFinalPot,
+            "非法风潮存档失败时目标状态不应被修改");
+    }
+
+    /// <summary>合法风潮形态应正常恢复，不被一致性校验误伤。</summary>
+    static void Test_RouteState_Consistent_Passes()
+    {
+        // 第 3 章末选风潮：目标为最终锅（进度必须已在最后一章）。
+        var finalPotTrend = new SaveData();
+        finalPotTrend.Run.Chapter = RunController.ChaptersPerRun;
+        finalPotTrend.Run.RouteId = "trend_sweet";
+        finalPotTrend.Run.RouteActiveChapter = RunController.ChaptersPerRun;
+        finalPotTrend.Run.RouteTargetsFinalPot = true;
+        var target1 = new GameState();
+        SaveSerializer.Apply(finalPotTrend, target1, new MetaState());
+        Assert(target1.Run.RouteId == "trend_sweet"
+               && target1.Run.RouteActiveChapter == RunController.ChaptersPerRun
+               && target1.Run.RouteTargetsFinalPot,
+            "第 3 章末风潮（目标最终锅）应正常恢复");
+
+        // 第 1/2 章末选风潮：只作用于下一章普通锅。
+        var normalTrend = new SaveData();
+        normalTrend.Run.RouteId = "trend_sweet";
+        normalTrend.Run.RouteActiveChapter = 2;
+        normalTrend.Run.RouteTargetsFinalPot = false;
+        var target2 = new GameState();
+        SaveSerializer.Apply(normalTrend, target2, new MetaState());
+        Assert(target2.Run.RouteId == "trend_sweet"
+               && target2.Run.RouteActiveChapter == 2
+               && !target2.Run.RouteTargetsFinalPot,
+            "普通风潮（不目标最终锅）应正常恢复");
     }
 
     /// <summary>Boss 记录的 Chapter / PotIndex 越界或 Threshold / PotTotalFinalScore 为负应被拒，且不改目标状态。</summary>

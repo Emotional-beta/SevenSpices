@@ -89,6 +89,7 @@ public class IngredientPool
     public IngredientInstance Confirm(IReadOnlyList<IngredientInstance> candidates, string selectedInstanceId)
     {
         ArgumentNullException.ThrowIfNull(candidates);
+        ValidatePendingBatch(candidates);
         if (string.IsNullOrWhiteSpace(selectedInstanceId))
             throw new ArgumentException("selectedInstanceId cannot be empty.", nameof(selectedInstanceId));
 
@@ -112,10 +113,37 @@ public class IngredientPool
     public void ReturnCandidates(IReadOnlyList<IngredientInstance> candidates)
     {
         ArgumentNullException.ThrowIfNull(candidates);
+        ValidatePendingBatch(candidates);
         foreach (var c in candidates)
             _instances.Add(c);
 
         _pending = null;
+    }
+
+    /// <summary>
+    /// 校验传入批次与当前未结算候选（<see cref="_pending"/>）一致：数量相等且两侧 InstanceId 集合完全相等。
+    /// 内容一致即可（不要求引用相等），因为调用方常把 <see cref="Draw"/> 的返回值拷入自己的字段再传回。
+    /// 双向集合校验可挡住「数量相等但含重复 / 缺失」的批次（如 pending=[A,B,C] 传入 [A,A,B]）。
+    /// 校验失败时抛 <see cref="InvalidOperationException"/> 且<b>不清除</b> pending，避免未结算候选被永久丢失。
+    /// </summary>
+    private void ValidatePendingBatch(IReadOnlyList<IngredientInstance> candidates)
+    {
+        if (_pending == null)
+            throw new InvalidOperationException(
+                "No unresolved candidate batch to settle. " +
+                "Confirm/ReturnCandidates must receive the batch returned by the most recent Draw.");
+
+        if (candidates.Count != _pending.Count)
+            throw new InvalidOperationException(
+                $"Candidate batch has {candidates.Count} item(s) but the pending batch has {_pending.Count}. " +
+                "Confirm/ReturnCandidates must receive the batch returned by the most recent Draw.");
+
+        var pendingIds = _pending.Select(c => c.InstanceId).ToHashSet();
+        var candidateIds = candidates.Select(c => c.InstanceId).ToHashSet();
+        if (!pendingIds.SetEquals(candidateIds))
+            throw new InvalidOperationException(
+                "Candidate batch does not match the pending batch: InstanceId sets differ. " +
+                "Confirm/ReturnCandidates must receive the batch returned by the most recent Draw.");
     }
 
     public IReadOnlyList<IngredientInstance> GetAll() => _instances.AsReadOnly();

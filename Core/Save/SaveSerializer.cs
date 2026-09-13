@@ -308,12 +308,50 @@ public static class SaveSerializer
                 $"Final Pot must be ({RunController.ChaptersPerRun},{RunController.PotsPerChapter}).");
         }
 
-        if (runDto.RouteActiveChapter != 0
-            && (runDto.RouteActiveChapter < 1 || runDto.RouteActiveChapter > RunController.ChaptersPerRun))
+        // 风潮字段间一致性（对照 GameController.ApplyRoute 与到期清除逻辑）：
+        //  - 无风潮：RouteActiveChapter 必须为 0，且不得标记目标为最终锅；
+        //  - 有风潮：RouteActiveChapter ∈ [1, ChaptersPerRun]；生效章节不得早于当前章（否则应已到期清除）；
+        //    标记目标为最终锅时，当前章与生效章节都必须等于最后一章
+        //    （只有第 3 章末选的风潮才可能目标为最终锅）。
+        if (string.IsNullOrWhiteSpace(runDto.RouteId))
+        {
+            if (runDto.RouteActiveChapter != 0)
+                throw new InvalidDataException(
+                    $"Save Run.RouteActiveChapter {runDto.RouteActiveChapter} must be 0 when Run.RouteId is empty.");
+
+            if (runDto.RouteTargetsFinalPot)
+                throw new InvalidDataException(
+                    "Save Run.RouteTargetsFinalPot cannot be true when Run.RouteId is empty.");
+
+            return;
+        }
+
+        if (runDto.RouteActiveChapter < 1 || runDto.RouteActiveChapter > RunController.ChaptersPerRun)
         {
             throw new InvalidDataException(
                 $"Save Run.RouteActiveChapter {runDto.RouteActiveChapter} is out of range; " +
-                $"expected 0 or [1, {RunController.ChaptersPerRun}].");
+                $"expected [1, {RunController.ChaptersPerRun}] when Run.RouteId is set.");
+        }
+
+        if (runDto.RouteActiveChapter < runDto.Chapter)
+        {
+            throw new InvalidDataException(
+                $"Save Run.RouteActiveChapter {runDto.RouteActiveChapter} is earlier than Run.Chapter " +
+                $"{runDto.Chapter}; an expired route should have been cleared.");
+        }
+
+        if (runDto.RouteTargetsFinalPot && runDto.RouteActiveChapter != RunController.ChaptersPerRun)
+        {
+            throw new InvalidDataException(
+                $"Save marks RouteTargetsFinalPot but Run.RouteActiveChapter is " +
+                $"{runDto.RouteActiveChapter}; expected {RunController.ChaptersPerRun}.");
+        }
+
+        if (runDto.RouteTargetsFinalPot && runDto.Chapter != RunController.ChaptersPerRun)
+        {
+            throw new InvalidDataException(
+                $"Save marks RouteTargetsFinalPot but Run.Chapter is {runDto.Chapter}; " +
+                $"expected {RunController.ChaptersPerRun}.");
         }
     }
 
