@@ -27,6 +27,9 @@ public partial class Main : Node
     // M6：阶段取证驱动的命令行开关（`--` 之后的用户参数）。仅显式带上时才创建驱动器，默认路径零副作用。
     private const string UiTourFlag = "--ui-tour";
 
+    // M7：生成 / 刷新像素回归基线（只写基线、不做比较）。带上它同样会启动取证驱动器。
+    private const string UiTourUpdateBaselineFlag = "--ui-tour-update-baseline";
+
     // M6：tour 模式固定随机种子，保证每次取证的食材 / 食客 / 候选可复现；可用 --ui-tour-seed=NNN 覆盖。
     private const string UiTourSeedPrefix = "--ui-tour-seed=";
     private const int DefaultUiTourSeed = 20260914;
@@ -135,7 +138,13 @@ public partial class Main : Node
         // M6：tour 模式注入固定种子（可被 --ui-tour-seed=NNN 覆盖），使截图证据可复现；
         // 不带 --ui-tour 时保持原样随机，默认启动路径零影响。
         string[] userArgs = OS.GetCmdlineUserArgs();
-        bool tourMode = userArgs.Contains(UiTourFlag);
+        bool updateBaseline = userArgs.Contains(UiTourUpdateBaselineFlag);
+        bool tourMode = userArgs.Contains(UiTourFlag) || updateBaseline;
+        if (updateBaseline && userArgs.Contains(UiTourFlag))
+        {
+            GD.PushWarning("[Tour] 同时传入 --ui-tour 与 --ui-tour-update-baseline："
+                + "更新模式优先，只写基线、不做比较。");
+        }
         _controller = tourMode
             ? new GameController(metaState: _metaState, random: new Random(ResolveTourSeed(userArgs)))
             : new GameController(metaState: _metaState);
@@ -153,11 +162,11 @@ public partial class Main : Node
         // 核心系统在关键节点发布事件；表现层只监听并置脏，不反查流程。
         _controller.Events.Subscribe(OnGameEvent);
 
-        // M6：仅当显式传入 --ui-tour 时挂载阶段取证驱动器；否则行为与既有完全一致。
+        // M6：仅当显式传入 --ui-tour / --ui-tour-update-baseline 时挂载阶段取证驱动器；否则零副作用。
         if (tourMode)
         {
             var tour = new UiSnapshotTour();
-            tour.Bind(this);
+            tour.Bind(this, updateBaseline);
             AddChild(tour);
         }
     }
@@ -741,7 +750,7 @@ public partial class Main : Node
         // 上一帧 RefreshUI 置的自动定位请求：等布局完成后再滚动，避免用旧尺寸计算。
         if (_pendingScrollTarget != null)
         {
-            _scroll.EnsureControlVisible(_pendingScrollTarget);
+            ScrollIntoView(_pendingScrollTarget);
             _pendingScrollTarget = null;
         }
 
@@ -1028,28 +1037,61 @@ public partial class Main : Node
         return null;
     }
 
+    /// <summary>
+    /// 自动定位单个目标控件：目标放得下时沿用 <see cref="ScrollContainer.EnsureControlVisible"/> 的最小滚动；
+    /// 当目标整体高于滚动视口时（如锅末「路线」区块），Godot 的实现会让底部对齐、把区块开头的标题裁到视口外，
+    /// 故改为把目标顶部对齐到视口顶部，保证玩家先看到区块开头。
+    /// <para>
+    /// 目标与其滚动内容一起平移，故「目标全局 Y − 内容全局 Y」即目标在内容中的偏移（与当前滚动位置无关），
+    /// 直接把它赋给纵向滚动条即可把目标顶部对齐视口顶部。该函数仅在状态变化时被调用一次，不会来回抖动。
+    /// </para>
+    /// </summary>
+    private void ScrollIntoView(Control target)
+    {
+        if (!target.IsVisibleInTree())
+            return;
+
+        var vBar = _scroll.GetVScrollBar();
+        if (target.Size.Y > _scroll.Size.Y && _scroll.GetChildCount() > 0
+            && _scroll.GetChild(0) is Control content)
+        {
+            float offsetY = target.GlobalPosition.Y - content.GlobalPosition.Y;
+            vBar.Value = Mathf.Clamp(offsetY, vBar.MinValue, vBar.MaxValue);
+            return;
+        }
+
+        _scroll.EnsureControlVisible(target);
+    }
+
     private void RefreshUI()
     {
         var run = _controller.Run;
         var pot = _controller.Pot;
+        bool runOver = _controller.IsRunComplete;
 
         _chapterLabel.Text = $"第 {run.Chapter} 章";
         _potLabel.Text = run.IsFinalPot ? "最终锅" : $"第 {run.PotIndex} 锅";
         _professionLabel.Text = ProfessionConfig.TryGet(run.ProfessionId, out var profession)
             ? $"职业：{profession.Name}（{ToFlavorName(profession.Theme)}）"
             : "职业：--";
-        _phaseLabel.Text = $"阶段：{ToBowlPhaseText(pot.CurrentBowlPhase)}";
-        // 最终锅不按碗推进（BowlNumber 固定为 ×32 档位），显示碗数会误导玩家
-        _bowlLabel.Text = run.IsFinalPot
-            ? "最终锅：可无限添加食材"
-            : $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
+        // 本局已结束时锅内阶段不再推进，残留的「选择食材」等文案会误导；改为终局口径。
+        _phaseLabel.Text = runOver ? "阶段：本局结束" : $"阶段：{ToBowlPhaseText(pot.CurrentBowlPhase)}";
+        // 最终锅不按碗推进（BowlNumber 固定为 ×32 档位），显示碗数会误导玩家；本局结束后一并收敛为 --。
+        _bowlLabel.Text = runOver
+            ? "碗数：--"
+            : run.IsFinalPot
+                ? "最终锅：可无限添加食材"
+                : $"碗数：{pot.BowlNumber} / {ToBowlLimitText(pot.BowlLimit)}";
         _scoreLabel.Text = $"基础分：{(int)Math.Floor(pot.BaseScoreWithFlavor)}（食材/效果分：{pot.BaseScore}）";
         _hudScoreLabel.Text = $"分数 {(int)Math.Floor(pot.BaseScoreWithFlavor)}";
         _flavorScoreLabel.Text = $"味道分：{(int)Math.Floor(pot.FlavorScore)}";
         int multiplier = ScoreCalculator.GetEffectiveMultiplier(pot);
-        _multiplierLabel.Text = pot.HeatBowlsRemaining > 0 && pot.HeatBonusTiers > 0
-            ? $"倍率：×{multiplier}（余温 +{pot.HeatBonusTiers} 档，剩 {pot.HeatBowlsRemaining} 碗）"
-            : $"倍率：×{multiplier}";
+        // 本局结束后倍率不再作用于任何后续结算，残留的 ×N 会让人误以为还能继续加食材。
+        _multiplierLabel.Text = runOver
+            ? "倍率：--"
+            : pot.HeatBowlsRemaining > 0 && pot.HeatBonusTiers > 0
+                ? $"倍率：×{multiplier}（余温 +{pot.HeatBonusTiers} 档，剩 {pot.HeatBowlsRemaining} 碗）"
+                : $"倍率：×{multiplier}";
         if (pot.IsScoreLocked)
         {
             _finalScoreLabel.Text = $"最终分数：{pot.FinalScore}";
@@ -1118,7 +1160,6 @@ public partial class Main : Node
         RebuildShopSection();
         RebuildRouteSection();
 
-        bool runOver = _controller.IsRunComplete;
         _skipBowlButton.Disabled = runOver || !_controller.CanSkipBowl;
         // 奖励未选定时 CanAdvanceToNextPot 为 false，「进入下一锅」自动被门控。
         _nextPotButton.Disabled = runOver || !_controller.CanAdvanceToNextPot;

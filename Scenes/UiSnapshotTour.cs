@@ -25,6 +25,28 @@ public partial class UiSnapshotTour : Node
 {
     private const string OutputDir = "res://generated-images/ui-m6";
 
+    /// <summary>
+    /// M7 像素回归基线目录。刻意放在 <c>Tests/</c>（版本库内、非 generated-images）下，
+    /// 且以 <c>.bin</c> 存盘而非 PNG：Godot 只为图片扩展名生成 <c>.import</c>，
+    /// 用 .bin 可避免把导入噪音一并纳入版本库。（格式见下方说明。）
+    /// </summary>
+    private const string BaselineDir = "res://Tests/Baselines/UiTour";
+
+    /// <summary>
+    /// 基线文件格式（<c>.bin</c>，自定义、不依赖 Godot 导入）：
+    /// GZip 压缩流，内含 8 字节魔数 + int32 宽 + int32 高（小端）+ Rgba8 原始像素。
+    /// 用压缩而非裸像素，是因为像素画大片纯色经 GZip 后仅数十 KB，
+    /// 避免把每个约 3.6MB 的裸基线纳入版本库。
+    /// </summary>
+    private static readonly byte[] BaselineMagic = System.Text.Encoding.ASCII.GetBytes("SSTOURB1");
+
+    /// <summary>
+    /// 差异像素占比容差：取 0，即要求逐字节完全一致。
+    /// 理由：tour 有固定随机种子且同一 Godot 版本、同一渲染后端，画面应当完全确定；
+    /// 任何像素差异都可能是真实回归，不应用容差掩盖。若将来跨机器出现平台字体渲染差异，再议放宽。
+    /// </summary>
+    private const double PixelToleranceRatio = 0.0;
+
     /// <summary>截图前的稳定帧数：等事件驱动置脏的 RefreshUI 与布局各跑一轮以上。</summary>
     private const int SettleFrames = 3;
 
@@ -42,12 +64,23 @@ public partial class UiSnapshotTour : Node
     private bool _finalPotReached;
     private string _finalPotNote = "未到达";
 
+    // M7：基线模式。_updateBaseline=true 时只写基线、不比较；否则与基线比较并报告差异。
+    private bool _updateBaseline;
+    private int _baselineCompared;
+    private int _baselineFailed;
+    private int _baselineWritten;
+
     private readonly List<Checkpoint> _pending = new();
     private readonly List<string> _captured = new();
     private readonly List<string> _unreached = new();
+    private readonly List<string> _baselineReport = new();
 
     /// <summary>在 <c>AddChild</c> 之前注入宿主，保证 <c>_Ready</c> 时已有可用引用。</summary>
-    public void Bind(Main main) => _main = main;
+    public void Bind(Main main, bool updateBaseline)
+    {
+        _main = main;
+        _updateBaseline = updateBaseline;
+    }
 
     public override void _Ready()
     {
@@ -308,7 +341,9 @@ public partial class UiSnapshotTour : Node
         string fullPath = _outputPath.PathJoin(fileName);
 
         string captureNote;
+        string baselineNote;
         bool captured;
+        bool baselineOk = true;
         try
         {
             var image = GetViewport().GetTexture().GetImage();
@@ -316,6 +351,8 @@ public partial class UiSnapshotTour : Node
             {
                 captured = false;
                 captureNote = "GetViewport().GetTexture().GetImage() 返回 null";
+                baselineNote = "未比较（无截图）";
+                baselineOk = false;
             }
             else
             {
@@ -327,18 +364,24 @@ public partial class UiSnapshotTour : Node
                 captureNote = captured
                     ? $"{image.GetWidth()}x{image.GetHeight()} -> {fullPath}"
                     : $"SavePng 失败，错误={saveErr}（{fullPath}）";
+
+                baselineNote = HandleBaseline(image, fileName, out baselineOk);
             }
         }
         catch (System.Exception ex)
         {
             captured = false;
             captureNote = $"截图异常：{ex.Message}";
+            baselineNote = "未比较（截图异常）";
+            baselineOk = false;
         }
 
         var (verifyOk, detail) = checkpoint.Verify(gc);
-        bool ok = captured && verifyOk;
+        bool ok = captured && verifyOk && baselineOk;
         if (!ok)
             _anyFail = true;
+
+        _baselineReport.Add($"{fileName}  [{(_updateBaseline ? "写基线" : "比较")}]  {baselineNote}");
 
         if (checkpoint.Name == "final-pot")
         {
@@ -440,6 +483,15 @@ public partial class UiSnapshotTour : Node
         foreach (var name in _unreached)
             GD.PrintErr($"[Tour]   未到达检查点：{name}");
 
+        GD.Print(_updateBaseline ? "[Tour] ===== 基线（更新模式：只写基线，不比较）=====" : "[Tour] ===== 像素回归基线 =====");
+        foreach (var line in _baselineReport)
+            GD.Print($"[Tour]   {line}");
+        if (_updateBaseline)
+            GD.Print($"[Tour] 基线写入：{_baselineWritten} 个（目录 {ProjectSettings.GlobalizePath(BaselineDir)}）");
+        else
+            GD.Print($"[Tour] 基线比较：{_baselineCompared - _baselineFailed}/{_baselineCompared} 通过，"
+                + $"失败 {_baselineFailed} 个，容差 {PixelToleranceRatio * 100:0.00}%");
+
         GD.Print($"[Tour] 章/锅：{gc.Run.Chapter}/{gc.Run.PotIndex}，最终锅={gc.Run.IsFinalPot}，"
             + $"结局={gc.Run.Outcome}，终止={gc.Run.IsFailed}");
         GD.Print($"[Tour] 最终锅可达性：{(_finalPotReached ? "可达" : "不可达")}（{_finalPotNote}）");
@@ -482,6 +534,169 @@ public partial class UiSnapshotTour : Node
 
         error = string.Empty;
         return true;
+    }
+
+    // ── M7：像素回归基线 ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 按模式处理像素基线：更新模式只写基线；比较模式读基线并比对差异像素。
+    /// 基线缺失 / 损坏 / 尺寸不符均判 FAIL（绝不静默 PASS），并提示用更新模式重新生成。
+    /// </summary>
+    private string HandleBaseline(Image image, string fileName, out bool ok)
+    {
+        string path = System.IO.Path.Combine(
+            ProjectSettings.GlobalizePath(BaselineDir), fileName + ".bin");
+
+        if (_updateBaseline)
+        {
+            if (TryWriteBaseline(image, path, out string writeError))
+            {
+                _baselineWritten++;
+                ok = true;
+                return $"已写基线 {path}";
+            }
+
+            ok = false;
+            return $"写基线失败：{writeError}（{path}）";
+        }
+
+        var (compareOk, detail) = CompareBaseline(image, path);
+        _baselineCompared++;
+        if (!compareOk)
+            _baselineFailed++;
+        ok = compareOk;
+        return detail;
+    }
+
+    /// <summary>
+    /// 把本次截图的宽高与 Rgba8 像素 GZip 压缩后写入基线文件（.bin，不走 Godot 导入）。
+    /// 采用「先写同目录临时文件、成功后再原子替换」的两步写法：任一步失败都保留旧基线，
+    /// 不会因磁盘满 / 中断先把旧基线截断。
+    /// </summary>
+    private static bool TryWriteBaseline(Image image, string path, out string error)
+    {
+        string tmpPath = path + ".tmp";
+        try
+        {
+            string? dir = System.IO.Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir))
+                System.IO.Directory.CreateDirectory(dir);
+
+            byte[] pixels = image.GetData();
+            int expectedBytes = image.GetWidth() * image.GetHeight() * 4;
+            if (pixels.Length != expectedBytes)
+            {
+                error = $"像素字节数 {pixels.Length} != 宽×高×4={expectedBytes}（图像格式非 Rgba8？）";
+                return false;
+            }
+
+            using (var stream = new System.IO.FileStream(
+                tmpPath, System.IO.FileMode.Create, System.IO.FileAccess.Write))
+            using (var gzip = new System.IO.Compression.GZipStream(
+                stream, System.IO.Compression.CompressionLevel.SmallestSize))
+            using (var writer = new System.IO.BinaryWriter(gzip))
+            {
+                writer.Write(BaselineMagic);
+                writer.Write(image.GetWidth());
+                writer.Write(image.GetHeight());
+                writer.Write(pixels);
+            }
+
+            // 临时文件已完整落盘，原子替换目标文件（Windows 下 MoveFileEx 覆盖语义）。
+            System.IO.File.Move(tmpPath, path, overwrite: true);
+            error = string.Empty;
+            return true;
+        }
+        catch (System.Exception ex)
+        {
+            TryDeleteTemp(tmpPath);
+            error = ex.Message;
+            return false;
+        }
+    }
+
+    /// <summary>尽力清理写入失败的临时文件；清理失败不影响「保留旧基线」这一主目标。</summary>
+    private static void TryDeleteTemp(string tmpPath)
+    {
+        try
+        {
+            if (System.IO.File.Exists(tmpPath))
+                System.IO.File.Delete(tmpPath);
+        }
+        catch
+        {
+            // 忽略：临时文件残留无害，旧基线仍在。
+        }
+    }
+
+    /// <summary>读取基线并与本次截图逐像素比较，返回是否在容差内与差异详情。</summary>
+    private static (bool Ok, string Detail) CompareBaseline(Image image, string path)
+    {
+        if (!System.IO.File.Exists(path))
+            return (false, $"无基线（{path}）；请用 --ui-tour-update-baseline 生成");
+
+        try
+        {
+            byte[] baseline;
+            int width;
+            int height;
+            using (var stream = new System.IO.FileStream(
+                path, System.IO.FileMode.Open, System.IO.FileAccess.Read))
+            using (var gzip = new System.IO.Compression.GZipStream(
+                stream, System.IO.Compression.CompressionMode.Decompress))
+            using (var reader = new System.IO.BinaryReader(gzip))
+            {
+                byte[] magic = reader.ReadBytes(BaselineMagic.Length);
+                if (magic.Length != BaselineMagic.Length)
+                    return (false, "基线损坏：读取魔数失败");
+                for (int i = 0; i < BaselineMagic.Length; i++)
+                {
+                    if (magic[i] != BaselineMagic[i])
+                        return (false, "基线损坏：魔数不符");
+                }
+
+                width = reader.ReadInt32();
+                height = reader.ReadInt32();
+                if (width != image.GetWidth() || height != image.GetHeight())
+                {
+                    return (false,
+                        $"尺寸不符：基线 {width}x{height}，本次 {image.GetWidth()}x{image.GetHeight()}");
+                }
+
+                int expected = width * height * 4;
+                baseline = reader.ReadBytes(expected);
+                if (baseline.Length != expected)
+                    return (false, $"基线损坏：像素字节数 {baseline.Length} != 期望 {expected}");
+            }
+
+            int totalPixels = width * height;
+            byte[] pixels = image.GetData();
+            if (pixels.Length != totalPixels * 4)
+                return (false, $"本次像素字节数 {pixels.Length} != 期望 {totalPixels * 4}");
+
+            int diffPixels = 0;
+            for (int p = 0; p < totalPixels; p++)
+            {
+                int c = p * 4;
+                if (baseline[c] != pixels[c]
+                    || baseline[c + 1] != pixels[c + 1]
+                    || baseline[c + 2] != pixels[c + 2]
+                    || baseline[c + 3] != pixels[c + 3])
+                {
+                    diffPixels++;
+                }
+            }
+
+            double ratio = diffPixels / (double)totalPixels;
+            bool ok = ratio <= PixelToleranceRatio;
+            string detail =
+                $"像素差异={diffPixels}/{totalPixels}（{ratio * 100:0.0000}%，容差 {PixelToleranceRatio * 100:0.00}%）";
+            return (ok, ok ? detail : detail + " → FAIL");
+        }
+        catch (System.Exception ex)
+        {
+            return (false, $"基线读取异常：{ex.Message}");
+        }
     }
 
     private async Task WaitFrames(int count)
